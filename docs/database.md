@@ -18,6 +18,7 @@ auth.users ── 1:1 ── profiles
 ## Files
 
 - `supabase/migrations/20260929000000_viral_studio_schema.sql` creates the schema, constraints, indexes, triggers and RLS policies. `20260929010000_profile_preferences.sql` evolves `profiles` to include `name`, Auth-synchronised `email`, `role`, `language`, `timezone`, `avatar_path`, and the three persisted notification preferences.
+- `20260929020000_private_avatars_storage.sql` creates the private `avatars` bucket. It permits only JPG, PNG and WebP up to 5 MiB, and Storage RLS limits every object operation to the authenticated owner folder.
 - `supabase/seed.sql` populates a disposable development database after three Auth users have been created through the Auth API. It deliberately does not insert raw credentials into `auth.users`.
 - `supabase/tests/rls_acceptance.sql` exercises the owner, commenter/viewer, and outsider identities with transaction rollback.
 
