@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { hasSupabasePublicConfig } from './config';
+import { getSupabasePublicConfig, hasSupabasePublicConfig } from './config';
 
 const publicPaths = new Set(['/login', '/register', '/forgot-password', '/reset-password']);
 
@@ -29,9 +29,10 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
+  const { url, anonKey } = getSupabasePublicConfig();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookies: {
         getAll: () => request.cookies.getAll(),
@@ -46,7 +47,8 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Keep this immediately after client creation: it validates and refreshes the JWT.
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims?.sub;
 
   if (!user && !isPublicPath(pathname)) {
     const loginUrl = request.nextUrl.clone();
