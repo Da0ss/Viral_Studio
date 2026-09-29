@@ -1,0 +1,17 @@
+# Dependencies and package-manager cache
+node_modules/
+.pnpm-store/
+
+# Generated output
+.next/
+dist/
+tsconfig.tsbuildinfo
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor files
+.DS_Store
+Thumbs.db

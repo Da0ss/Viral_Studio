@@ -1,0 +1,15 @@
+@import '../../style.css';
+@import '../../local.css';
+@import '../../polish.css';
+@import '../../assets/fonts/manrope/index.css';
+@import '../../assets/fonts/roboto-condensed/index.css';
+@import './phosphor.css';
+:root { font-family: var(--font-ui); }
+
+.migration-page { padding-top: 48px; }
+.migration-page > small { color: var(--muted); font-size: 12px; letter-spacing: .08em; }
+.migration-page > p:not(.subtitle) { max-width: 560px; font-size: 18px; line-height: 1.45; }
+.migration-page .cta { margin-top: 30px; }
+.migration-list { display: grid; gap: 0; max-width: 760px; margin-top: 42px; border-top: 1px solid var(--line); }
+.migration-list article { display: grid; gap: 8px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.migration-list span { color: var(--muted); }
