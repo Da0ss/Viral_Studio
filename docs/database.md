@@ -74,9 +74,12 @@ The two owner-membership checks are `SECURITY DEFINER` functions only because qu
 
 ## Applying and testing
 
-There are ten local migrations. Fresh PGlite acceptance applies their SQL
-unchanged against explicitly modelled Supabase-owned schemas, not a complete
-Supabase installation. The last inspected hosted project was
+The PGlite runner discovers and applies every local migration SQL file in
+filename order, unchanged, against explicitly modelled Supabase-owned schemas;
+it is not a complete Supabase installation. The 2026-10-05 run applied 20
+migrations and passed 14 dynamically discovered SQL acceptance files. See
+[`database-verification-2026-10-05.md`](database-verification-2026-10-05.md)
+for evidence and remaining verification. The last inspected hosted project was
 `sytjbknfwwbombypwfhc` (Viral_Studio), with five earlier migration entries whose
 timestamps differ from the local first five. New local migrations have not been
 applied there. Reconcile history on disposable staging before hosted application;
@@ -85,8 +88,9 @@ owner-trigger changes were denied by approval review; they remain unapplied.
 
 Local follow-up migrations qualify tenant predicates, bootstrap organization
 owners, avoid project-members policy recursion, generate message notifications,
-and protect project-media Storage. Run `pnpm test:db` for all four SQL acceptance
-files. For full-stack acceptance use an empty disposable Supabase database,
+and protect project-media Storage. Run `pnpm test:db` to apply every migration
+and discover all `*_acceptance.sql` suites in a fresh PGlite database. For
+full-stack acceptance use an empty disposable Supabase database,
 three real Auth identities and Storage HTTP/Realtime checks. Never seed production.
 
 Tables: `profiles`, `organizations`, `organization_members`, `projects`,

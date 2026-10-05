@@ -3,8 +3,11 @@
 This is a current worktree inventory, not a deployment certificate. Latest
 evidence: 157 Vitest cases, lint and typecheck pass after project action hardening;
 production compilation last passed before that action change;
-twenty embedded SQL migrations pass, including lease/reference, job/inbox-column,
-client structural privileges, ownership/revocation and project-identity checks.
+20 embedded SQL migrations and 14 discovered SQL acceptance suites passed on
+2026-10-05, including lease/reference, job/inbox-column, schema security,
+ownership/revocation and project-identity checks. Clean Supabase stack and hosted
+RLS verification remain pending; see
+[`database-verification-2026-10-05.md`](database-verification-2026-10-05.md).
 Earlier evidence includes three Node secret-detector cases and 30 Playwright cases.
 The Playwright scope is 26 guest browser cases plus four guest HTTP API
 checks, not authenticated application acceptance. Hosted CI has not been run.
@@ -24,7 +27,7 @@ checks, not authenticated application acceptance. Hosted CI has not been run.
 | Chat Realtime | Mock reconnect/dedup cases pass; actual two-user/offline verification pending |
 | Generation jobs | Schema only; provider/model/budget decision and worker/UI/API needed |
 | Mobile / console / images / overflow | Guest auth pages checked; private rendered surfaces pending |
-| Secrets | Only .env.example tracked; env ignore rules present; client canary absent; full history/SSR scan pending |
+| Secrets | Only .env.example tracked; env ignore rules present; client-secret check has limited static-bundle scope; full history/SSR scan pending |
 | Production build | Local compilation passes; no staging/production deployment verified |
 | Safe errors / action auth | Guards and generic errors exist; not a completed exhaustive security audit |
 | Private Storage | avatars + project-media declared private; media migration local only |

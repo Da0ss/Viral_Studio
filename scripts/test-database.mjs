@@ -43,19 +43,14 @@ try {
     ('22222222-2222-4222-8222-222222222222','viewer@example.invalid'),
     ('33333333-3333-4333-8333-333333333333','outsider@example.invalid');`);
   await db.exec(await readFile(new URL('supabase/seed.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/rls_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/tenant_storage_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/message_notifications_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/project_media_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/media_deletion_outbox_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/media_cleanup_leases_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/generation_job_permissions_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/notification_permissions_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/structural_privileges_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/membership_owner_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/organization_revocation_acceptance.sql', root), 'utf8'));
-  await db.exec(await readFile(new URL('supabase/tests/project_identity_acceptance.sql', root), 'utf8'));
-  console.log(`PASS: ${files.length} unmodified migrations; tenant/RLS, onboarding, Storage metadata, inbox, cleanup lease and generation/notification column acceptance.`);
+  const testDirectory = new URL('supabase/tests/', root);
+  const tests = (await readdir(testDirectory)).filter(file => file.endsWith('_acceptance.sql')).sort();
+  if (!tests.length) throw new Error('No SQL acceptance files discovered');
+  for (const file of tests) {
+    await db.exec(await readFile(new URL(file, testDirectory), 'utf8'));
+    console.log(`Passed ${file}`);
+  }
+  console.log(`PASS: ${files.length} unmodified migrations; ${tests.length} SQL acceptance files on fresh PGlite (Supabase services are not exercised).`);
 } catch (error) {
   console.error(`FAIL: ${error.message} (${error.code ?? 'no SQLSTATE'})`);
   process.exitCode = 1;

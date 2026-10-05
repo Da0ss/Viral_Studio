@@ -1,11 +1,5 @@
 # Production verification
 
-Canary follow-up: a production build with an invalid non-credential
-`SUPABASE_SERVICE_ROLE_KEY` marker passed; the detector compared that configured
-value against 24 static client files and found no exposure. CI now supplies the
-same canary. This establishes literal marker exclusion for the current build,
-not successful privileged operations or actual production-secret verification.
-
 `pnpm test:client-secrets` runs three detector regression cases and scans the
 existing `.next/static` client artifacts after a build. CI runs it immediately
 after building. It rejects Supabase secret-key/service-role JWT patterns and
@@ -80,13 +74,19 @@ needed, not a forced-success exit or disabled tests. The standalone
 `agent-browser` executable was unavailable in this environment, so automated
 verification used the installed Playwright runner.
 
-Database integration is an explicit disposable-Supabase step: apply every SQL
-migration to an empty database, create the documented Auth seed users, run
-`supabase/seed.sql`, then execute `supabase/tests/rls_acceptance.sql` as a
-database owner. The acceptance SQL rolls back each behavioral case.
+Database integration requires a disposable Supabase stack. The repository has
+no `supabase/config.toml`, and `supabase/seed.sql` expects three Auth users with
+fixed UUIDs before it runs. A clean-stack run must initialize configuration in
+an isolated disposable copy, reset without seeding, create real Auth users,
+align the seed and SQL fixtures to the returned IDs, then apply the seed and
+acceptance suites. Never seed production. See
+[`database-verification-2026-10-05.md`](database-verification-2026-10-05.md).
 
-`pnpm test:db` also runs nine unmodified migration files, the seed and existing
-RLS acceptance SQL in a fresh in-memory PGlite PostgreSQL. It found and now
+`pnpm test:db` applies every discovered migration SQL file unchanged, then loads
+the seed and discovers every `*_acceptance.sql` suite in a fresh in-memory
+PGlite PostgreSQL. On 2026-10-05, 20 migrations and 14 acceptance suites passed.
+See [`database-verification-2026-10-05.md`](database-verification-2026-10-05.md)
+for the evidence boundary and clean-Supabase next steps. It found and now
 guards against recursive project/project-member policies (SQLSTATE 42P17).
 `supabase/tests/tenant_storage_acceptance.sql` adds authenticated onboarding and
 owner/project bootstrap, bidirectional A/B project/member isolation, denied
