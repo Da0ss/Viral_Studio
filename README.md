@@ -1,17 +1,30 @@
-# VIRAL / Studio frontend
+# Viral Studio
 
 Run locally:
 
 ```powershell
-node server.mjs --port 4173
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-Open `http://localhost:4173/`.
+Copy `.env.example` to `.env.local` and configure the public Supabase URL and
+publishable/anon key before running. Never put a service role key in a
+`NEXT_PUBLIC_` variable. Open `http://localhost:3000/`.
 
-Build the static production bundle:
+Build and run the Next.js production application:
 
 ```powershell
-node build.mjs
+pnpm build
+pnpm start
 ```
 
-The output is written to `dist/`.
+Checks: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`.
+
+Database setup and pending migrations: [database](docs/database.md).
+Verification scope: [testing](docs/testing.md).
+Remaining release blockers: [implementation progress](docs/implementation-progress.md).
+The application is not yet production-ready; authenticated browser, database
+isolation and generation-worker acceptance are still required.
+
+The old static prototype remains available through `pnpm legacy:dev` and
+`pnpm legacy:build`; it is not the production application.

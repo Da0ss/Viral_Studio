@@ -16,6 +16,7 @@ alter table public.profiles alter column language set default 'ru';
 alter table public.profiles add constraint profiles_language_check check (language in ('ru', 'en', 'kk'));
 update public.profiles set timezone = 'Asia/Qyzylorda' where timezone = 'UTC';
 alter table public.profiles alter column timezone set default 'Asia/Qyzylorda';
+alter table public.profiles drop constraint if exists profiles_timezone_check;
 alter table public.profiles add constraint profiles_timezone_check check (timezone in ('Asia/Qyzylorda', 'Asia/Almaty', 'Europe/Moscow', 'Europe/Berlin'));
 alter table public.profiles add constraint profiles_avatar_path_check check (avatar_path is null or (avatar_path !~ '^/' and avatar_path !~ '(^|/)\.\.(/|$)'));
 alter table public.profiles add column notification_email boolean not null default true;

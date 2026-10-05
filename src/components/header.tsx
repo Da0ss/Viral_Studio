@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { logout } from '@/actions/auth';
@@ -29,6 +30,7 @@ export function Header({ user }: HeaderProps) {
       </nav>
       <div className="account">
         <Link className="icon-button" href="/projects" aria-label="Перейти к поиску проектов"><i className="icon ph ph-magnifying-glass" /></Link>
+        {user && <Link className="icon-button" href={'/notifications' as Route} aria-label="Открыть уведомления"><i className="icon ph ph-bell" /></Link>}
         <span className="hairline" />
         {user ? <><Link href="/profile" className="avatar black" aria-label="Открыть профиль">{(user.name || user.email)?.charAt(0).toUpperCase() || 'П'}</Link><Link className="person" href="/profile"><b>{user.name || user.email?.split('@')[0] || 'Профиль'}</b><small>{user.email || 'Авторизован'}</small></Link><form action={logout}><button className="auth-logout" type="submit">Выйти</button></form></> : <Link className="auth-login" href="/login">Войти</Link>}
         <button className="mobile-menu" type="button" onClick={() => setMobileMenuOpen((value) => !value)} aria-label="Открыть меню" aria-expanded={isMobileMenuOpen}><i className={`icon ph ph-${isMobileMenuOpen ? 'x' : 'list'}`} /></button>

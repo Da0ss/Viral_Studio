@@ -19,7 +19,7 @@ function isImageSignature(bytes: Uint8Array, mimeType: string) {
 }
 
 export type AvatarUploadResult =
-  | { status: 'uploaded'; avatarPath: string; signedUrl: string; warning?: string }
+  | { status: 'uploaded'; avatarPath: string; signedUrl: string | null; warning?: string }
   | { status: 'error'; message: string };
 
 export async function uploadAvatar(formData: FormData): Promise<AvatarUploadResult> {
@@ -36,22 +36,38 @@ export async function uploadAvatar(formData: FormData): Promise<AvatarUploadResu
   const { data: profile, error: profileError } = await supabase.from('profiles').select('avatar_path').eq('id', user.id).maybeSingle();
   if (profileError || !profile) return { status: 'error', message: 'Сначала сохраните основные данные профиля.' };
 
-  const path = `avatars/${user.id}/${Date.now()}-${safeFileStem(file.name)}.${avatarExtension(file.type)}`;
+  const path = `avatars/${user.id}/${crypto.randomUUID()}-${safeFileStem(file.name)}.${avatarExtension(file.type)}`;
   const { error: uploadError } = await supabase.storage.from('avatars').upload(path, fileBytes, { contentType: file.type, upsert: false });
   if (uploadError) return { status: 'error', message: 'Не удалось загрузить изображение. Попробуйте ещё раз.' };
 
-  const { error: updateError } = await supabase.from('profiles').update({ avatar_path: path }).eq('id', user.id);
-  if (updateError) {
+  let update = supabase.from('profiles').update({ avatar_path: path }).eq('id', user.id);
+  update = profile.avatar_path === null ? update.is('avatar_path', null) : update.eq('avatar_path', profile.avatar_path);
+  const { data: updated, error: updateError } = await update.select('id').maybeSingle();
+  if (updateError || !updated) {
     await supabase.storage.from('avatars').remove([path]);
-    return { status: 'error', message: 'Не удалось сохранить аватар в профиле.' };
+    return { status: 'error', message: 'Не удалось сохранить аватар. Возможно, профиль изменён в другой вкладке. Обновите страницу и попробуйте снова.' };
   }
-  const { data: signed, error: signedError } = await supabase.storage.from('avatars').createSignedUrl(path, 60 * 60);
+  // Persistence has succeeded. Preview and cleanup failures must not invite a
+  // duplicate upload or leave the form's saved avatar baseline stale.
+  let signedUrl: string | null = null;
+  const warnings: string[] = [];
+  try {
+    const { data: signed, error: signedError } = await supabase.storage.from('avatars').createSignedUrl(path, 60 * 60);
+    if (!signedError && signed?.signedUrl) signedUrl = signed.signedUrl;
+  } catch { /* Treat transport failure like a missing preview. */ }
+  if (!signedUrl) warnings.push('Аватар сохранён, но предпросмотр недоступен. Перезагрузите страницу.');
   const oldPath = profile.avatar_path;
-  const { error: removeError } = oldPath && oldPath !== path ? await supabase.storage.from('avatars').remove([oldPath]) : { error: null };
+  if (oldPath && oldPath !== path) {
+    try {
+      const { error } = await supabase.storage.from('avatars').remove([oldPath]);
+      if (error) warnings.push('Старый файл не удалось удалить. Автоматическая повторная очистка пока недоступна.');
+    } catch {
+      warnings.push('Старый файл не удалось удалить. Автоматическая повторная очистка пока недоступна.');
+    }
+  }
   revalidatePath('/', 'layout');
   revalidatePath('/profile');
-  if (signedError || !signed?.signedUrl) return { status: 'error', message: 'Аватар сохранён, но не удалось подготовить предпросмотр. Перезагрузите страницу.' };
-  return { status: 'uploaded', avatarPath: path, signedUrl: signed.signedUrl, warning: removeError ? 'Новый аватар сохранён, но старый файл будет удалён позже.' : undefined };
+  return { status: 'uploaded', avatarPath: path, signedUrl, warning: warnings.join(' ') || undefined };
 }
 
 export async function updateProfile(input: ProfileValues): Promise<ProfileActionResult> {
@@ -72,20 +88,18 @@ export async function updateProfile(input: ProfileValues): Promise<ProfileAction
     emailChangePending = true;
   }
 
-  const { error } = await supabase.from('profiles').upsert({
-    id: user.id,
+  const { data: updated, error } = await supabase.from('profiles').update({
     name: values.name,
     email: user.email.toLowerCase(),
     role: values.role,
     language: values.language,
     timezone: values.timezone,
-    avatar_path: values.avatar_path || null,
     notification_email: values.notification_email,
     notification_browser: values.notification_browser,
     notification_marketing: values.notification_marketing,
-  }, { onConflict: 'id' });
+  }).eq('id', user.id).select('id').maybeSingle();
 
-  if (error) return { status: 'error', message: 'Не удалось сохранить профиль. Попробуйте ещё раз.' };
+  if (error || !updated) return { status: 'error', message: 'Не удалось сохранить профиль. Попробуйте ещё раз.' };
   revalidatePath('/', 'layout');
   revalidatePath('/profile');
   return { status: 'saved', emailChangePending };

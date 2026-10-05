@@ -9,6 +9,34 @@ do $$ begin
 end $$;
 rollback;
 
+-- The same person is a commenter in project_one and a viewer in project_two.
+-- Check both roles and the database-level body limit used by the Server Action.
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}';
+do $$
+begin
+  begin
+    insert into public.messages(project_id, sender_id, body)
+    values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '22222222-2222-4222-8222-222222222222', 'viewer must not send');
+    raise exception 'viewer inserted a message';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.messages(project_id, sender_id, body)
+    values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', '   ');
+    raise exception 'empty message was inserted';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.messages(project_id, sender_id, body)
+    values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', repeat('x', 4001));
+    raise exception 'overlong message was inserted';
+  exception when check_violation then null;
+  end;
+end $$;
+rollback;
+
 begin;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}';

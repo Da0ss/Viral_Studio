@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import type { Route } from 'next';
 import { createClient } from '@/lib/supabase/server';
 import { getAppUrl } from '@/lib/supabase/config';
+import { safeInternalPath } from '@/lib/auth/redirect';
 import type { AuthState } from '@/lib/auth/types';
 
 const configurationMessage = 'Supabase Auth не настроен. Добавьте ключи в .env.local.';
@@ -26,8 +27,7 @@ function credentials(formData: FormData) {
 }
 
 function nextPath(formData: FormData): Route {
-  const next = String(formData.get('next') || '/create');
-  return (next.startsWith('/') && !next.startsWith('//') ? next : '/create') as Route;
+  return safeInternalPath(formData.get('next')) as Route;
 }
 
 export async function login(_: AuthState, formData: FormData): Promise<AuthState> {
@@ -70,6 +70,8 @@ export async function updatePassword(_: AuthState, formData: FormData): Promise<
   if (password.length < 8) return { error: 'Пароль должен содержать не менее 8 символов.' };
   const supabase = await getAuthClient();
   if (!supabase) return { error: configurationMessage };
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) return { error: 'Сессия закончилась. Откройте ссылку из письма ещё раз.' };
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { error: 'Не удалось обновить пароль. Откройте ссылку из письма ещё раз.' };
   return { success: 'Пароль обновлён. Теперь можно продолжить работу.' };

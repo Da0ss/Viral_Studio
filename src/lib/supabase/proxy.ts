@@ -19,7 +19,12 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   let response = NextResponse.next({ request });
 
+  // Machine-to-machine auth is enforced by this exact handler, not user cookies.
+  // Never expand this to a prefix covering other internal/API routes.
+  if (pathname === '/api/internal/media-cleanup') return response;
+
   if (!hasSupabasePublicConfig()) {
+    if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'Сервис временно недоступен.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
     if (!isPublicPath(pathname)) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/login';
@@ -51,6 +56,11 @@ export async function updateSession(request: NextRequest) {
   const user = data?.claims?.sub;
 
   if (!user && !isPublicPath(pathname)) {
+    if (pathname.startsWith('/api/')) {
+      const denied = NextResponse.json({ error: 'Войдите снова.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
+      response.cookies.getAll().forEach(cookie => denied.cookies.set(cookie));
+      return denied;
+    }
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
     loginUrl.searchParams.set('next', pathname);

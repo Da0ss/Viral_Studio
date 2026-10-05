@@ -2,6 +2,15 @@ import 'server-only';
 import { createClient, getCurrentUser } from '@/lib/supabase/server';
 import { projectStatuses, projectTypes, type OrganizationOption, type ProjectListItem, type ProjectStatus, type ProjectType } from '@/types/projects';
 export const pageSize = 12;
+export function projectPageQuery(filters: ProjectFilters, page: number) {
+  const params = new URLSearchParams();
+  if (filters.search) params.set('q', filters.search);
+  if (filters.type) params.set('type', filters.type);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.organization) params.set('organization', filters.organization);
+  params.set('page', String(page));
+  return `?${params}`;
+}
 const cleanSearch = (value: string) => value.normalize('NFKC').replace(/[^\p{L}\p{N}\s-]/gu, ' ').trim().slice(0, 80);
 const one = (value: string | undefined, allowed: readonly string[]) => allowed.includes(value ?? '') ? value : undefined;
 export interface ProjectFilters { search: string; type?: ProjectType; status?: ProjectStatus; organization?: string; page: number; }
