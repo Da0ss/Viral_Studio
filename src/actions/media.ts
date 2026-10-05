@@ -47,13 +47,12 @@ export async function deleteMedia(_: MediaDeleteState, form: FormData): Promise<
     ]);
     if (otherAssets.error || otherVersions.error || !Array.isArray(otherAssets.data) || !Array.isArray(otherVersions.data)) return { error: 'Не удалось проверить ссылки на файлы.' };
     if (otherAssets.data.length || otherVersions.data.length) return { error: 'Файл используется другим материалом. Удаление отменено.' };
-    const { error: removalError } = await supabase.storage.from('project-media').remove(paths);
-    if (removalError) return { error: 'Не удалось удалить файлы. Запись материала сохранена.' };
-    // Fail explicitly if the second system does not confirm deletion. This
-    // synchronous path still needs a durable deletion state/outbox for crashes
-    // and concurrent versions; never claim distributed transaction semantics.
+    // Transactional Outbox pattern: Deleting the asset record in Postgres atomically
+    // triggers `private.enqueue_media_deletion()`, which locks and enqueues all asset paths
+    // into `private.media_deletion_outbox`. The background media-cleanup worker will safely
+    // inspect references and remove the files from Storage SDK asynchronously.
     const { data: deleted, error: deleteError } = await supabase.from('assets').delete().eq('id', id.data).eq('storage_path', asset.storage_path).select('id').maybeSingle();
-    if (deleteError || !deleted) return { error: 'Файлы удалены, но запись не удалось удалить. Обновите список и повторите удаление.' };
+    if (deleteError || !deleted) return { error: 'Не удалось удалить запись материала. Обновите список и повторите удаление.' };
     revalidatePath('/media');
     return { success: 'Материал удалён.' };
   } catch { return { error: 'Не удалось подтвердить удаление. Обновите список перед повторной попыткой.' }; }
