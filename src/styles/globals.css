@@ -40,3 +40,10 @@ dialog.project-modal{inset:auto;margin:auto;width:min(calc(100% - 36px),540px);m
 .profile-fields{margin:0;padding:0;border:0;min-width:0}
 .notifications-list{display:grid;gap:16px;margin-top:24px}.notification-card{border:1px solid var(--line);padding:20px;overflow-wrap:anywhere}.notification-card h2{font-size:24px}.notification-card p{white-space:pre-wrap}.notification-card small{color:var(--muted)}
 .notifications-page h1{font-size:clamp(32px,6vw,84px);overflow-wrap:anywhere}
+
+   /* Responsive fixes for auth pages (320px / 768px) */
+   .auth-page h1 { font-size: clamp(40px, 12vw, 64px); max-width: 100%; overflow-wrap: anywhere; }
+   @media (max-width: 380px) {
+     .topbar { gap: 12px; }
+     .account { gap: 8px; }
+   }
