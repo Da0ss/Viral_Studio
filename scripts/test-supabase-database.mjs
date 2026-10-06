@@ -8,9 +8,9 @@ import path from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const supabaseDirectory = path.join(root, 'supabase');
 const fixtures = [
-  { key: 'owner', emailLabel: 'owner', placeholder: '11111111-1111-4111-8111-111111111111' },
-  { key: 'viewer', emailLabel: 'viewer', placeholder: '22222222-2222-4222-8222-222222222222' },
-  { key: 'outsider', emailLabel: 'outsider', placeholder: '33333333-3333-4333-8333-333333333333' },
+  { key: 'owner', emailLabel: 'owner', placeholder: '11111111-1111-4111-8111-111111111111', emailPlaceholder: 'owner@example.invalid' },
+  { key: 'viewer', emailLabel: 'viewer', placeholder: '22222222-2222-4222-8222-222222222222', emailPlaceholder: 'viewer@example.invalid' },
+  { key: 'outsider', emailLabel: 'outsider', placeholder: '33333333-3333-4333-8333-333333333333', emailPlaceholder: 'outsider@example.invalid' },
 ];
 
 function fail(message) {
@@ -145,16 +145,17 @@ function psqlEnvironment(databaseUrl) {
 }
 
 async function runSql(psqlEnv, sql, label, options = {}) {
-  const result = await run('psql', ['--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1', ...(options.capture ? ['--tuples-only', '--no-align'] : [])], {
+  const result = await run('psql', ['--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1', '--set', 'VERBOSITY=verbose', ...(options.capture ? ['--tuples-only', '--no-align'] : [])], {
     cwd: root,
     env: psqlEnv,
     input: sql,
     timeoutMs: options.timeoutMs ?? 120_000,
   });
   if (result.code !== 0) {
-    // psql diagnostics may contain connection details or interpolated SQL. Do
-    // not emit them; the suite file is sufficient to locate the failing case.
-    fail(`${label} failed in psql (exit ${result.code ?? 'unknown'}); inspect the local database logs for details`);
+    // Keep diagnostics useful without exposing connection details or SQL/data.
+    const sqlstate = /ERROR:\s*([0-9A-Z]{5})\b/.exec(result.stderr)?.[1];
+    const plpgsqlLine = /CONTEXT:\s*PL\/pgSQL function [^\r\n]*? line (\d+) at /.exec(result.stderr)?.[1];
+    fail(`${label} failed in psql (exit ${result.code ?? 'unknown'}${sqlstate ? `, SQLSTATE ${sqlstate}` : ''}${plpgsqlLine ? `, PL/pgSQL line ${plpgsqlLine}` : ''}); inspect the local database logs for details`);
   }
   return options.capture ? result.stdout.trim() : undefined;
 }
@@ -165,6 +166,7 @@ function replaceFixtureIds(sql, usersByKey) {
     const user = usersByKey.get(fixture.key);
     if (!user) fail(`Missing Auth fixture ${fixture.key}`);
     result = result.replaceAll(fixture.placeholder, user.id);
+    result = result.replaceAll(fixture.emailPlaceholder, user.email);
   }
   return result;
 }

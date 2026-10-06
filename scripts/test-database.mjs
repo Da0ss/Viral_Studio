@@ -41,10 +41,10 @@ try {
     console.log(`Applied ${file}`);
   }
   stage = 'Acceptance identity fixtures';
-  await db.exec(`insert into auth.users(id,email) values
-    ('11111111-1111-4111-8111-111111111111','owner@example.invalid'),
-    ('22222222-2222-4222-8222-222222222222','viewer@example.invalid'),
-    ('33333333-3333-4333-8333-333333333333','outsider@example.invalid');`);
+  await db.exec(`insert into auth.users(id,email,email_confirmed_at) values
+    ('11111111-1111-4111-8111-111111111111','owner@example.invalid',now()),
+    ('22222222-2222-4222-8222-222222222222','viewer@example.invalid',now()),
+    ('33333333-3333-4333-8333-333333333333','outsider@example.invalid',now());`);
   await db.exec(await readFile(new URL('supabase/seed.sql', root), 'utf8'));
   const testDirectory = new URL('supabase/tests/', root);
   const tests = (await readdir(testDirectory)).filter(file => file.endsWith('_acceptance.sql')).sort();

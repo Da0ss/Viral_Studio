@@ -35,7 +35,7 @@ describe('team membership actions', () => {
   it('uses caller-session RLS for role updates and revalidates on a returned row', async () => {
     const client = setup();
     await expect(updateOrganizationMemberRole({}, form({ organizationId, userId, role: 'admin' }))).resolves.toEqual({ success: 'roleSaved' });
-    expect(client.from).toHaveBeenCalledWith('organization_members');
+    expect(client.client.from).toHaveBeenCalledWith('organization_members');
     expect(client.update).toHaveBeenCalledWith({ role: 'admin' });
     expect(client.query.eq).toHaveBeenNthCalledWith(1, 'organization_id', organizationId);
     expect(client.query.eq).toHaveBeenNthCalledWith(2, 'user_id', userId);
