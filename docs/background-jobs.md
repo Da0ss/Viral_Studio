@@ -8,7 +8,7 @@ INSERT/DELETE/TRUNCATE are denied. SQL verifies own mark-read works, foreign
 updates affect zero rows, and title/body/recipient forgery fails. Server message
 notification creation still passes existing trigger acceptance.
 
-## Media deletion outbox (local schema, worker pending)
+## Media deletion outbox (hosted core schema; worker acceptance pending)
 
 The follow-up path-tombstone migration coordinates metadata INSERT/path UPDATE
 with deletion enqueue using transaction-scoped path advisory locks. Queue paths
@@ -39,7 +39,7 @@ RPCs and Storage API. Claim uses SKIP LOCKED, a 120-second lease and a fresh tok
 inspection checks all asset/version references and renews the current lease;
 completion/retry requires the matching unexpired token. RPCs are SECURITY INVOKER
 with EXECUTE restricted to service_role, not clients. Sequential SQL verifies claim,
-expiry/reclaim, token fencing, backoff and completion. No scheduled runner exists;
+expiry/reclaim, token fencing, backoff and completion. A local cron aggregator exists;
 true multi-session/Storage HTTP behavior remains unverified. The adapter's custom
 fetch uses a native 20-second AbortSignal deadline for each RPC/Storage request,
 including response-body consumption, and preserves caller cancellation. A real
@@ -51,30 +51,60 @@ MEDIA_CLEANUP_ENABLED=true. It requires Authorization: Bearer with a separate
 cryptographically random 32-byte lowercase hex MEDIA_CLEANUP_SECRET; never reuse
 the service key or put the token in a URL/client configuration. Responses are
 no-store and omit paths, ids and exception details. One request handles one item;
-there is no configured scheduler. maxDuration=120 is declared but host support
+the daily fallback scheduler is not yet deployed. maxDuration=120 is declared but host support
 must be verified. The exact proxy exception is covered by boundary tests.
 Do not enable it until hosted acceptance and controlled Storage writes are verified.
-The existing synchronous media action
-still removes bytes before deleting metadata; switching it to enqueue-only must
-wait for worker implementation and acceptance. The worker must atomically claim
-with lease fencing, recheck every path for live references, coordinate new path
-references, remove via Storage API, acknowledge only its lease, retry with bounded
-backoff and redact errors. Path reuse/completed-row deduplication and concurrent
-versions are unresolved; this table alone is not a reliable deletion workflow.
+The media action now deletes metadata and triggers an outbox snapshot in the same
+database transaction. Its cleanup worker atomically claims paths with lease
+fencing, checks live references, removes through the Storage API, and acknowledges
+only its current lease. It remains disabled until hosted acceptance is complete.
 
-`public.generation_jobs` is the durable contract for generation work. It stores
-the project, requester, status (`queued`, `running`, `completed`, `failed`, or
-`cancelled`), JSON input/output, a bounded error message, timestamps and a
-completion invariant.
+## Project-media upload intents and reconciliation
 
-RLS allows project participants to read jobs and only project owners/editors to
-submit them as themselves. The local column-permission migration allows clients
-to insert only project_id/requested_by/input, with queued/default result fields.
-Clients cannot UPDATE, DELETE, TRUNCATE or set status/output/error/timestamps/id.
-Worker lifecycle writes are reserved for service_role. Cancellation requires a
-separate authorized transition RPC, not unrestricted updates; it is not yet built.
-A generation worker is intentionally not included in this
-repository: production deployment must supply a trusted server-side worker using
-the service role, claim queued jobs atomically, update status, redact provider
-errors, set `completed_at` for completed jobs, and retry idempotently. Never run
-that worker in a Client Component.
+`private.media_upload_intents` gives each `(requester, project, UUID key)` one
+byte fingerprint and reserved canonical path. A transactional begin RPC
+serializes quota by project, counts assets, versions, upload intents and
+generation reservations, and enforces a default 1 GiB project limit. Each
+upload reserves the maximum 50 MiB until hash-verified finalization. Only
+`service_role` can override a project quota. Signed tokens and expiry remain
+private; retries replay the persisted token, and cleanup waits through its TTL
+plus grace. File bytes go directly from the browser to the private Storage
+bucket through the signed capability, avoiding the function-host request-size
+limit.
+
+`POST /api/internal/media-upload-reconcile` claims intents only after persisted
+token expiry plus grace and an expired lease, retires the path, removes
+unreferenced bytes and fences the acknowledgement. Failures remain claimable
+with bounded backoff.
+This worker has separate `MEDIA_UPLOAD_RECONCILE_SECRET` and
+`MEDIA_UPLOAD_RECONCILE_ENABLED` settings and requires an external scheduler.
+It is local only and must remain disabled until hosted concurrency and Storage
+HTTP acceptance pass.
+
+## Generation lifecycle (local implementation; hosted acceptance pending)
+
+`20261005201745_generation_lifecycle.sql` replaces direct client insertion with
+authorized creation/cancellation RPCs. Client-visible columns exclude privileged
+dispatch, billing and lease details. Creation requires current organization and
+project owner/editor access and reserves cost and output storage atomically.
+
+The server-only `generation-worker.ts` and `huggingface-video.ts` implement
+fenced claims, just-before-submit access revalidation, provider submission,
+polling, cancellation, immutable output persistence and conservative accounting.
+An ambiguous paid submission becomes `uncertain`; it is not automatically
+resubmitted. Failed acknowledgement after output finalization preserves bytes
+for a fenced retry instead of deleting a possibly committed result.
+
+Generation remains disabled unless `GENERATION_ENABLED=true`. Configure
+`HF_TOKEN` only server-side. The current application reserve is $0.05 per job,
+with $1/day global and $0.50/day per-user budgets. These are application limits,
+not a guaranteed provider billing cap; validate the provider's current pricing
+and account-level spending controls before enabling paid requests.
+
+`GET /api/internal/workers` requires an independent exact bearer `CRON_SECRET`
+and invokes only explicitly enabled consumers. `vercel.json` supplies a daily
+fallback, not a responsive autonomous production schedule. The authenticated
+generation detail page can advance eligible jobs while viewed. A suitable
+deployed frequent scheduler, monitoring and provider-backed acceptance remain
+required. Native Supabase and hosted service checks have not yet proved this
+implementation. No paid generation is certified by local mocks or PGlite.

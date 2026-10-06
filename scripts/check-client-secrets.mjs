@@ -2,7 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { parseEnv } from 'node:util';
 import { detectClientSecrets } from './lib/client-secrets.mjs';
 const root = new URL('../', import.meta.url);
-const secretName = /(?:SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|ACCESS_TOKEN|API_KEY)/i;
+const secretName = /(?:SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|ACCESS_TOKEN|API_KEY|HF_TOKEN|HUGGING_FACE_HUB_TOKEN)/i;
 const values = [];
 function collect(env) {
   for (const [name, value] of Object.entries(env)) {

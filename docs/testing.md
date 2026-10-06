@@ -1,6 +1,16 @@
 # Production verification
 
-`pnpm test:client-secrets` runs three detector regression cases and scans the
+Current results and their exact scope are recorded in
+[verification-2026-10-06.md](verification-2026-10-06.md). Counts later in this
+document are historical unless dated otherwise; they are not a release certificate.
+
+Native Supabase verification now has a separate CI job and three local commands:
+`pnpm test:db:supabase`, `pnpm test:db:services`, and `pnpm test:db:concurrency`.
+See [supabase-integration.md](supabase-integration.md) for Docker/psql setup,
+migration reset and evidence. These runners are implemented but have not yet
+passed against a running stack in this workspace.
+
+`pnpm test:client-secrets` runs four detector regression cases and scans the
 existing `.next/static` client artifacts after a build. CI runs it immediately
 after building. It rejects Supabase secret-key/service-role JWT patterns and
 literal, JSON-escaped or URL-encoded values (minimum 12 characters) of configured
@@ -9,8 +19,11 @@ Findings print paths/names only, never credentials. Local result: 24 client file
 passed, with zero configured sensitive variable names to compare. Thus actual
 service-role value exclusion was not verified. This check is not a Git-history,
 server-rendered HTML, obfuscation, transformed-value or full repository scan.
+`pnpm test:repository-secrets` separately scans fetched Git blobs, non-ignored
+workspace files and SSR build artifacts for configured values and explicit
+token patterns. Neither scanner proves absence of unknown/obfuscated secrets.
 
-Latest local run: 71 unit/component cases and 30 Playwright cases passed, with
+Historical local run: 71 unit/component cases and 30 Playwright cases passed, with
 lint and production build. The 30 include 26 guest browser cases and four HTTP
 API-denial cases (two cases repeated under both browser project configurations).
 API checks prove JSON 401/no redirect/no-store for guest and foreign-origin guest
@@ -51,7 +64,8 @@ and mocked Server Action. They verify repeated INSERT deduplication, determinist
 ordering for equal timestamps, a Realtime echo preceding the send response,
 draft recovery after rejection, catch-up deduplication and subscription cleanup.
 These mocks do not prove real WebSocket delivery, two-user authorization or
-offline recovery against hosted Supabase. The local unit/component total is 30.
+offline recovery against hosted Supabase. Current mocks additionally check
+immediate offline indication and channel recreation on browser online events.
 
 `pnpm test` runs Vitest unit tests for redirect validation, filter normalization,
 profile path validation and chat length limits. Project-action unit tests mock
@@ -74,12 +88,11 @@ needed, not a forced-success exit or disabled tests. The standalone
 `agent-browser` executable was unavailable in this environment, so automated
 verification used the installed Playwright runner.
 
-Database integration requires a disposable Supabase stack. The repository has
-no `supabase/config.toml`, and `supabase/seed.sql` expects three Auth users with
-fixed UUIDs before it runs. A clean-stack run must initialize configuration in
-an isolated disposable copy, reset without seeding, create real Auth users,
-align the seed and SQL fixtures to the returned IDs, then apply the seed and
-acceptance suites. Never seed production. See
+Database integration requires a disposable Supabase stack. The repository now
+includes `supabase/config.toml`, and the loopback-only runners create real Auth
+users and remap fixed fixture UUIDs in memory. Reset this disposable local stack
+without automatic seeding before running the acceptance commands. Never seed
+production or run these local-only fixture scripts against a hosted project. See
 [`database-verification-2026-10-05.md`](database-verification-2026-10-05.md).
 
 `pnpm test:db` applies every discovered migration SQL file unchanged, then loads
@@ -104,8 +117,10 @@ Realtime delivery, deployed migration history or hosted default privileges.
 exclusion, absence of copied private content, outsider isolation, rollback and
 revoked trigger execution privileges. Email/push service delivery is not covered.
 
-Browser acceptance includes desktop and 390px mobile layout, error overlay and
-console inspection, image load failures, horizontal overflow, auth redirects,
-filters, profile persistence, upload rejection, chat Realtime, and generation
-job lifecycle with seeded roles. Authenticated and Realtime cases require a
-dedicated disposable Supabase project and test identities.
+The authenticated browser runner is `pnpm test:e2e:supabase`; it requires the
+disposable local stack and creates its own real Auth identities. Its source
+coverage is evolving for project filters, profile persistence, media and chat.
+No successful native run is recorded yet. Generation is explicitly disabled in
+this harness to prevent accidental paid requests. Provider-backed generation,
+real recovery email/session flow, deployed private-page layouts and exhaustive
+authorization acceptance require separate evidence before release approval.

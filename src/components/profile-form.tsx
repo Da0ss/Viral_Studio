@@ -7,19 +7,21 @@ import { useForm } from 'react-hook-form';
 import { updateProfile } from '@/actions/profile';
 import { AvatarUpload } from '@/components/avatar-upload';
 import { languages, profileSchema, timezones, type ProfileValues } from '@/types/profile';
+import { useI18n } from '@/components/locale-provider';
 
 const languageLabels: Record<(typeof languages)[number], string> = { ru: 'Русский', en: 'English', kk: 'Қазақша' };
 
 interface ProfileFormProps { initialProfile: ProfileValues; initialAvatarUrl: string | null; }
 
 export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormProps) {
+  const { t } = useI18n();
   const router = useRouter();
   const [saveState, setSaveState] = useState<'pristine' | 'dirty' | 'saving' | 'saved' | 'error'>('pristine');
   const [savedProfile, setSavedProfile] = useState(initialProfile);
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const operation = useRef<'profile' | 'avatar' | null>(null);
-  const [successMessage, setSuccessMessage] = useState('Профиль сохранён.');
+  const [successMessage, setSuccessMessage] = useState('');
   const form = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: initialProfile,
@@ -51,11 +53,11 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
     }
     const persisted = { ...values, email: result.emailChangePending ? savedProfile.email : values.email };
     reset(persisted); setSavedProfile(persisted);
-    setSuccessMessage(result.emailChangePending ? 'Профиль сохранён. Подтвердите новый email по ссылке в письме.' : 'Профиль сохранён.');
+    setSuccessMessage(result.emailChangePending ? t('profile.savedConfirmEmail') : t('profile.saved'));
     setSaveState('saved');
     router.refresh();
     } catch {
-      setError('root.server', { message: 'Не удалось сохранить профиль. Проверьте соединение и повторите попытку.' });
+      setError('root.server', { message: t('profile.saveConnectionError') });
       setSaveState('error');
     } finally {
       operation.current = null;
@@ -64,18 +66,18 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
   const errorMessage = errors.root?.server?.message ?? Object.values(errors).find((error) => error && 'message' in error)?.message;
 
   return <form className="profile-form" noValidate aria-busy={state === 'saving' || avatarUploading} onSubmit={event => { void handleSubmit(onSubmit, onInvalid)(event); }}>
-    <div className="profile-form__status" aria-live="polite">{state === 'dirty' && 'Есть несохранённые изменения.'}{state === 'saving' && 'Сохраняем профиль…'}{state === 'saved' && successMessage}{state === 'error' && errorMessage}</div>
+    <div className="profile-form__status" aria-live="polite">{state === 'dirty' && t('profile.unsaved')}{state === 'saving' && t('profile.saving')}{state === 'saved' && successMessage}{state === 'error' && errorMessage}</div>
     <AvatarUpload initialUrl={avatarUrl} disabled={state === 'saving'} acquireUpload={() => { if (operation.current) return false; operation.current = 'avatar'; setAvatarUploading(true); return true; }} releaseUpload={() => { operation.current = null; setAvatarUploading(false); }} onUploaded={(avatarPath, signedUrl) => { setSavedProfile((previous) => ({ ...previous, avatar_path: avatarPath })); setAvatarUrl(signedUrl); form.resetField('avatar_path', { defaultValue: avatarPath }); }} />
     <fieldset className="profile-grid profile-fields" disabled={state === 'saving'}>
-      <Field label="Имя" error={errors.name?.message}><input {...register('name')} autoComplete="name" /></Field>
-      <Field label="Email" error={errors.email?.message}><input {...register('email')} type="email" autoComplete="email" /></Field>
-      <Field label="Должность" error={errors.role?.message}><input {...register('role')} autoComplete="organization-title" /></Field>
+      <Field label={t('profile.name')} error={errors.name?.message}><input {...register('name')} autoComplete="name" /></Field>
+      <Field label={t('profile.email')} error={errors.email?.message}><input {...register('email')} type="email" autoComplete="email" /></Field>
+      <Field label={t('profile.role')} error={errors.role?.message}><input {...register('role')} autoComplete="organization-title" /></Field>
       <input {...register('avatar_path')} type="hidden" />
-      <Field label="Язык" error={errors.language?.message}><select {...register('language')}>{languages.map((language) => <option key={language} value={language}>{languageLabels[language]}</option>)}</select></Field>
-      <Field label="Часовой пояс" error={errors.timezone?.message}><select {...register('timezone')}>{timezones.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}</select></Field>
+      <Field label={t('profile.language')} error={errors.language?.message}><select {...register('language')}>{languages.map((language) => <option key={language} value={language}>{languageLabels[language]}</option>)}</select></Field>
+      <Field label={t('profile.timezone')} error={errors.timezone?.message}><select {...register('timezone')}>{timezones.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}</select></Field>
     </fieldset>
-    <fieldset className="notification-settings" disabled={state === 'saving'}><legend>Уведомления</legend><label><input {...register('notification_email')} type="checkbox" /> Email-уведомления</label><label><input {...register('notification_browser')} type="checkbox" /> Уведомления в браузере</label><label><input {...register('notification_marketing')} type="checkbox" /> Новости и предложения</label></fieldset>
-    <div className="profile-actions"><button className="ghost-button" type="button" disabled={!isDirty || state === 'saving' || avatarUploading} onClick={() => { reset(savedProfile); setSaveState('pristine'); }}>Отменить</button><button className="cta" type="submit" disabled={!isDirty || state === 'saving' || avatarUploading}><span>{state === 'saving' ? 'Сохраняем…' : 'Сохранить'}</span><i className="icon ph ph-check" /></button></div>
+    <fieldset className="notification-settings" disabled={state === 'saving'}><legend>{t('profile.notifications')}</legend><label><input {...register('notification_email')} type="checkbox" /> {t('profile.emailNotifications')}</label><label><input {...register('notification_browser')} type="checkbox" /> {t('profile.browserNotifications')}</label><label><input {...register('notification_marketing')} type="checkbox" /> {t('profile.marketing')}</label></fieldset>
+    <div className="profile-actions"><button className="ghost-button" type="button" disabled={!isDirty || state === 'saving' || avatarUploading} onClick={() => { reset(savedProfile); setSaveState('pristine'); }}>{t('profile.cancel')}</button><button className="cta" type="submit" disabled={!isDirty || state === 'saving' || avatarUploading}><span>{state === 'saving' ? t('profile.saving') : t('common.save')}</span><i className="icon ph ph-check" /></button></div>
     {state === 'saved' && <div className="profile-toast" role="status">{successMessage}</div>}
   </form>;
 }

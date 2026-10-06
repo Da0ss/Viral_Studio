@@ -6,7 +6,16 @@ do $$ begin
 end $$;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111"}',true);
+do $$ begin
+  begin
+    insert into storage.objects(bucket_id,name) values ('project-media','projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/77777777-7777-4777-8777-777777777777/clip.mp4');
+    raise exception 'Authenticated direct Storage upload bypassed intent reservation';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
 insert into storage.objects(bucket_id,name) values ('project-media','projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/77777777-7777-4777-8777-777777777777/clip.mp4');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111"}',true);
 do $$ begin
   begin
     insert into storage.objects(bucket_id,name) values ('project-media','projects/not-a-uuid/invalid/clip.mp4');
@@ -45,8 +54,8 @@ do $$ declare n integer; begin
   get diagnostics n = row_count;
   if n<>1 then raise exception 'Owner delete failed'; end if;
 end $$;
-insert into storage.objects(bucket_id,name) values ('project-media','projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/77777777-7777-4777-8777-777777777777/retained.mp4');
 reset role;
+insert into storage.objects(bucket_id,name) values ('project-media','projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/77777777-7777-4777-8777-777777777777/retained.mp4');
 -- Transfer organization ownership before revoking the previous sole owner.
 update public.organization_members set role='owner'
 where organization_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and user_id='22222222-2222-4222-8222-222222222222';

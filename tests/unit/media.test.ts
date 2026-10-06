@@ -8,11 +8,13 @@ it('normalizes pagination without accepting malformed offsets', () => {
   expect(parseMediaPage('999999')).toBe(10000);
 });
 function setup(user = true, error: unknown = null) {
-  const query = { select: vi.fn(), order: vi.fn(), range: vi.fn().mockResolvedValue({ data: [{ id: 'asset', name: 'Real file' }], count: 25, error }) };
+  const query = { select: vi.fn(), order: vi.fn(), range: vi.fn().mockResolvedValue({ data: [{ id: 'asset', project_id: 'project', name: 'Real file' }], count: 25, error }) };
   query.select.mockReturnValue(query); query.order.mockReturnValue(query);
-  const from = vi.fn(() => query);
+  const membershipQuery = { select: vi.fn(), eq: vi.fn(), in: vi.fn().mockResolvedValue({ data: [{ project_id: 'project', role: 'owner' }], error: null }) };
+  membershipQuery.select.mockReturnValue(membershipQuery); membershipQuery.eq.mockReturnValue(membershipQuery);
+  const from = vi.fn((table: string) => table === 'assets' ? query : membershipQuery);
   mocks.client.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: user ? { id: 'user' } : null }, error: null }) }, from });
-  return { query, from };
+  return { query, from, membershipQuery };
 }
 it('does not query private records for guests', async () => {
   const client = setup(false);
@@ -24,6 +26,7 @@ it('reads bounded records without exposing Storage paths', async () => {
   expect(await getMedia(2)).toMatchObject({ total: 25, items: [{ name: 'Real file' }] });
   expect(client.query.range).toHaveBeenCalledWith(24, 47);
   expect(client.query.select.mock.calls[0][0]).not.toContain('storage_path');
+  expect(client.membershipQuery.in).toHaveBeenCalledWith('project_id', ['project']);
 });
 it('redacts database errors', async () => {
   setup(true, { message: 'SQL private detail' });

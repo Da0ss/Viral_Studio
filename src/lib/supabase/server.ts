@@ -3,8 +3,9 @@ import 'server-only';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getSupabasePublicConfig, hasSupabasePublicConfig } from './config';
+import { createDeadlineFetch } from '@/lib/deadline-fetch';
 
-export async function createClient() {
+export async function createClient(options: { requestTimeoutMs?: number } = {}) {
   const cookieStore = await cookies();
   const { url, anonKey } = getSupabasePublicConfig();
 
@@ -19,6 +20,7 @@ export async function createClient() {
         }
       },
     },
+    ...(options.requestTimeoutMs !== undefined ? { global: { fetch: createDeadlineFetch(options.requestTimeoutMs) } } : {}),
   });
 }
 

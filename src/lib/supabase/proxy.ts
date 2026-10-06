@@ -11,7 +11,12 @@ function isPublicPath(pathname: string) {
 function redirectWithSession(url: URL, response: NextResponse) {
   const redirect = NextResponse.redirect(url);
   response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-  response.headers.forEach((value, key) => redirect.headers.set(key, value));
+  // Preserve Auth cache controls, but not Next's internal continuation/request
+  // headers: carrying x-middleware-next into a redirect can continue routing.
+  for (const key of ['cache-control', 'expires', 'pragma']) {
+    const value = response.headers.get(key);
+    if (value) redirect.headers.set(key, value);
+  }
   return redirect;
 }
 
@@ -21,7 +26,7 @@ export async function updateSession(request: NextRequest) {
 
   // Machine-to-machine auth is enforced by this exact handler, not user cookies.
   // Never expand this to a prefix covering other internal/API routes.
-  if (pathname === '/api/internal/media-cleanup') return response;
+  if (pathname === '/api/internal/media-cleanup' || pathname === '/api/internal/media-upload-reconcile') return response;
 
   if (!hasSupabasePublicConfig()) {
     if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'Сервис временно недоступен.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
@@ -63,7 +68,7 @@ export async function updateSession(request: NextRequest) {
     }
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
-    loginUrl.searchParams.set('next', pathname);
+    loginUrl.searchParams.set('next', `${pathname}${request.nextUrl.search}`);
     return redirectWithSession(loginUrl, response);
   }
 

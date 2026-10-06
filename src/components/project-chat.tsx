@@ -4,13 +4,15 @@ import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { sendMessage } from '@/actions/messages';
 import { createClient } from '@/lib/supabase/browser';
 import type { ChatMessage } from '@/types/messages';
+import { useI18n } from '@/components/locale-provider';
 
 type Connection = 'connecting' | 'connected' | 'disconnected' | 'error';
 const maxLength = 4000;
 const sort = (items: ChatMessage[]) => [...items].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
-const time = (value: string) => new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 
 export function ProjectChat({ projectId, currentUserId, canSend, initialMessages }: { projectId: string; currentUserId: string; canSend: boolean; initialMessages: ChatMessage[] }) {
+  const { locale, t } = useI18n();
+  const time = (value: string) => new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
   const [messages, setMessages] = useState(() => sort(initialMessages));
   const [body, setBody] = useState(''); const [pending, setPending] = useState(false); const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<Connection>('connecting'); const [reconnect, setReconnect] = useState(0); const [unread, setUnread] = useState(0);
@@ -30,6 +32,11 @@ export function ProjectChat({ projectId, currentUserId, canSend, initialMessages
     const supabase = createClient();
     let cancelled = false;
     let syncing = false;
+    let offline = !navigator.onLine;
+    const onOffline = () => { offline = true; setConnection('disconnected'); setError(t('chat.connectionError')); };
+    const onOnline = () => { offline = false; setConnection('connecting'); setError(null); setReconnect((value) => value + 1); };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
     async function catchUp() {
       if (syncing || cancelled) return;
       syncing = true;
@@ -52,22 +59,23 @@ export function ProjectChat({ projectId, currentUserId, canSend, initialMessages
         synchronizedThrough.current = cursor;
         if (wasAtBottom) window.requestAnimationFrame(latest);
       } catch {
-        if (!cancelled) { setConnection('error'); setError('Соединение восстановлено, но сообщения не синхронизированы. Повторите подключение.'); }
+        if (!cancelled) { setConnection('error'); setError(t('chat.syncError')); }
       } finally { syncing = false; }
     }
     const channel = supabase.channel(`project:${projectId}:messages`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => {
-      if (cancelled) return;
+      if (cancelled || offline) return;
       const message = payload.new as ChatMessage; const wasAtBottom = nearBottom();
       if (!add(message)) return;
       if (wasAtBottom) window.requestAnimationFrame(latest); else if (message.sender_id !== currentUserId) setUnread((count) => count + 1);
     }).subscribe((status) => {
       if (cancelled) return;
-      if (status === 'SUBSCRIBED') { setConnection('connected'); setError((value) => value?.startsWith('Соединение') ? null : value); void catchUp(); }
-      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { setConnection('error'); setError('Соединение с чатом потеряно. Повторите подключение.'); }
+      if (offline) { setConnection('disconnected'); return; }
+      if (status === 'SUBSCRIBED') { setConnection('connected'); setError((value) => value ? null : value); void catchUp(); }
+      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { setConnection('error'); setError(t('chat.connectionError')); }
       else if (status === 'CLOSED') setConnection('disconnected'); else setConnection('connecting');
     });
-    return () => { cancelled = true; void supabase.removeChannel(channel); };
-  }, [projectId, currentUserId, reconnect]);
+    return () => { cancelled = true; window.removeEventListener('offline', onOffline); window.removeEventListener('online', onOnline); void supabase.removeChannel(channel); };
+  }, [projectId, currentUserId, reconnect, t]);
   async function loadOlder() {
     if (loadingOlder) return;
     const oldest = messages.find((message) => !message.optimistic);
@@ -88,14 +96,14 @@ export function ProjectChat({ projectId, currentUserId, canSend, initialMessages
       window.requestAnimationFrame(() => {
         if (list) list.scrollTop = previousTop + list.scrollHeight - previousHeight;
       });
-    } catch { setError('Не удалось загрузить историю. Повторите попытку.'); }
+    } catch { setError(t('chat.historyError')); }
     finally { setLoadingOlder(false); }
   }
   async function submit() {
     const text = body.trim();
-    if (!canSend) { setError('У вас нет права отправлять сообщения в этот проект.'); return; }
-    if (!text) { setError('Сообщение не может быть пустым.'); return; }
-    if (text.length > maxLength) { setError(`Сообщение не должно превышать ${maxLength} символов.`); return; }
+    if (!canSend) { setError(t('chat.noPermission')); return; }
+    if (!text) { setError(t('chat.emptyError')); return; }
+    if (text.length > maxLength) { setError(t('chat.lengthError', { max: maxLength })); return; }
     if (pending) return;
     const temporaryId = `optimistic-${crypto.randomUUID()}`;
     const optimistic: ChatMessage = { id: temporaryId, project_id: projectId, sender_id: currentUserId, body: text, created_at: new Date().toISOString(), optimistic: true };
@@ -105,18 +113,18 @@ export function ProjectChat({ projectId, currentUserId, canSend, initialMessages
       if (!result.ok) { ids.current.delete(temporaryId); setMessages((items) => items.filter((message) => message.id !== temporaryId)); setBody((value) => value || text); setError(result.error); return; }
       add(result.message, temporaryId); ids.current.delete(temporaryId); if (atBottom.current) window.requestAnimationFrame(latest);
     } catch {
-      ids.current.delete(temporaryId); setMessages((items) => items.filter((message) => message.id !== temporaryId)); setBody((value) => value || text); setError('Не удалось отправить сообщение. Попробуйте ещё раз.');
+      ids.current.delete(temporaryId); setMessages((items) => items.filter((message) => message.id !== temporaryId)); setBody((value) => value || text); setError(t('chat.sendError'));
     } finally { setPending(false); }
   }
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }
-  return <section className="project-chat" aria-label="Чат проекта">
-    <header className="project-chat__header"><div><b>Сообщения</b><small aria-live="polite">{connection === 'connected' ? 'Онлайн' : connection === 'connecting' ? 'Подключаемся…' : 'Нет соединения'}</small></div>{connection !== 'connected' && <button className="ghost-button" type="button" onClick={() => { setError(null); setConnection('connecting'); setReconnect((value) => value + 1); }}>Переподключить</button>}</header>
+  return <section className="project-chat" aria-label={t('chat.label')}>
+    <header className="project-chat__header"><div><b>{t('chat.messages')}</b><small aria-live="polite">{connection === 'connected' ? t('chat.online') : connection === 'connecting' ? t('chat.connecting') : t('chat.offline')}</small></div>{connection !== 'connected' && <button className="ghost-button" type="button" onClick={() => { setError(null); setConnection('connecting'); setReconnect((value) => value + 1); }}>{t('chat.reconnect')}</button>}</header>
     {error && <p className="project-chat__error" role="alert">{error}</p>}
-    {hasOlder && <button className="ghost-button" type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Загружаем…' : 'Предыдущие сообщения'}</button>}
+    {hasOlder && <button className="ghost-button" type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? t('chat.loading') : t('chat.previous')}</button>}
     <div className="project-chat__messages" ref={listRef} onScroll={() => { atBottom.current = nearBottom(); if (atBottom.current) setUnread(0); }} aria-live="polite">
-      {messages.length === 0 ? <div className="project-chat__empty"><b>СООБЩЕНИЙ ПОКА НЕТ</b><p>{canSend ? 'Начните разговор — первое сообщение увидят участники проекта.' : 'Новые сообщения появятся здесь.'}</p></div> : messages.map((message) => <article className={`project-chat__message ${message.sender_id === currentUserId ? 'mine' : ''} ${message.optimistic ? 'sending' : ''}`} key={message.id}><div><b>{message.sender_id === currentUserId ? 'Вы' : 'Участник проекта'}</b><time dateTime={message.created_at}>{message.optimistic ? 'Отправляем…' : time(message.created_at)}</time></div><p>{message.body}</p></article>)}
+      {messages.length === 0 ? <div className="project-chat__empty"><b>{t('chat.empty')}</b><p>{canSend ? t('chat.firstMessage') : t('chat.noNewMessages')}</p></div> : messages.map((message) => <article className={`project-chat__message ${message.sender_id === currentUserId ? 'mine' : ''} ${message.optimistic ? 'sending' : ''}`} key={message.id}><div><b>{message.sender_id === currentUserId ? t('chat.you') : t('chat.projectMember')}</b><time dateTime={message.created_at}>{message.optimistic ? t('chat.sending') : time(message.created_at)}</time></div><p>{message.body}</p></article>)}
     </div>
-    {unread > 0 && <button className="project-chat__unread" type="button" onClick={latest}>Новых сообщений: {unread}</button>}
-    {canSend ? <div className="project-chat__composer"><label htmlFor="chat-body">Новое сообщение</label><textarea id="chat-body" value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={onKeyDown} maxLength={maxLength} disabled={pending} placeholder="Введите сообщение…" rows={3} /><div><small>{body.length}/{maxLength} · Enter — отправить, Shift+Enter — новая строка</small><button className="cta" type="button" onClick={() => void submit()} disabled={pending || !body.trim()}><span>{pending ? 'Отправляем…' : 'Отправить'}</span></button></div></div> : <p className="project-chat__readonly">Вы можете читать чат, но отправка доступна ролям commenter, editor и owner.</p>}
+    {unread > 0 && <button className="project-chat__unread" type="button" onClick={latest}>{t('chat.unread', { count: unread })}</button>}
+    {canSend ? <div className="project-chat__composer"><label htmlFor="chat-body">{t('chat.newMessage')}</label><textarea id="chat-body" value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={onKeyDown} maxLength={maxLength} disabled={pending} placeholder={t('chat.placeholder')} rows={3} /><div><small>{t('chat.hint', { length: body.length, max: maxLength })}</small><button className="cta" type="button" onClick={() => void submit()} disabled={pending || !body.trim()}><span>{pending ? t('chat.sending') : t('chat.send')}</span></button></div></div> : <p className="project-chat__readonly">{t('chat.readonly')}</p>}
   </section>;
 }

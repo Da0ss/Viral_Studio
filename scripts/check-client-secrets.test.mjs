@@ -14,3 +14,7 @@ test('detects secret key patterns, not publishable keys', () => {
   assert.deepEqual(detectClientSecrets('sb_secret_fake_only_test_value'), ['Supabase secret-key pattern']);
   assert.deepEqual(detectClientSecrets('sb_publishable_fake_only_test_value'), []);
 });
+test('detects Hugging Face credentials without exposing values', () => {
+  assert.deepEqual(detectClientSecrets('hf_' + 'a'.repeat(34)), ['Hugging Face token pattern']);
+  assert.deepEqual(detectClientSecrets('HF_TOKEN=hf_your_token'), []);
+});

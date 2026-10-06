@@ -26,6 +26,23 @@ export async function prepareMediaDownload(_: MediaDownloadState, form: FormData
   }
 }
 
+export async function prepareMediaVersionDownload(_: MediaDownloadState, form: FormData): Promise<MediaDownloadState> {
+  const id = z.string().uuid().safeParse(form.get('versionId'));
+  if (!id.success) return { error: 'Некорректная версия материала.' };
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return { error: 'Войдите снова.' };
+    const { data: version, error } = await supabase.from('asset_versions').select('asset_id, storage_path').eq('id', id.data).maybeSingle();
+    if (error || !version) return { error: 'Версия материала недоступна.' };
+    const { data: asset, error: assetError } = await supabase.from('assets').select('project_id').eq('id', version.asset_id).maybeSingle();
+    if (assetError || !asset || mediaPath.exec(version.storage_path)?.[1] !== asset.project_id) return { error: 'Версия материала недоступна.' };
+    const { data, error: signingError } = await supabase.storage.from('project-media').createSignedUrl(version.storage_path, 60, { download: true });
+    if (signingError || !data?.signedUrl) return { error: 'Не удалось подготовить скачивание. Попробуйте снова.' };
+    return { url: data.signedUrl };
+  } catch { return { error: 'Не удалось подготовить скачивание. Попробуйте снова.' }; }
+}
+
 export type MediaDeleteState = { error?: string; success?: string };
 export async function deleteMedia(_: MediaDeleteState, form: FormData): Promise<MediaDeleteState> {
   const id = z.string().uuid().safeParse(form.get('assetId'));
@@ -54,6 +71,6 @@ export async function deleteMedia(_: MediaDeleteState, form: FormData): Promise<
     const { data: deleted, error: deleteError } = await supabase.from('assets').delete().eq('id', id.data).eq('storage_path', asset.storage_path).select('id').maybeSingle();
     if (deleteError || !deleted) return { error: 'Не удалось удалить запись материала. Обновите список и повторите удаление.' };
     revalidatePath('/media');
-    return { success: 'Материал удалён.' };
+    return { success: 'Материал удалён из списка; файл поставлен в очередь безопасной очистки.' };
   } catch { return { error: 'Не удалось подтвердить удаление. Обновите список перед повторной попыткой.' }; }
 }

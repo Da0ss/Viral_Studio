@@ -43,7 +43,7 @@ it('does not report a zero-row database deletion as success', async () => {
 });
 it('deletes asset via atomic DB transaction triggering outbox worker enqueueing', async () => {
   const client = setup('editor');
-  expect(await deleteMedia({}, form())).toMatchObject({ success: 'Материал удалён.' });
+  expect(await deleteMedia({}, form())).toMatchObject({ success: 'Материал удалён из списка; файл поставлен в очередь безопасной очистки.' });
   expect(client.deleteQuery.eq).toHaveBeenCalledWith('storage_path', path);
   expect(mocks.revalidate).toHaveBeenCalledWith('/media');
 });

@@ -6,13 +6,14 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 // the HTTP Auth/Storage services. Never accepts a remote database connection.
 const db = new PGlite({ extensions: { pgcrypto } });
 const root = new URL('../', import.meta.url);
+let stage = 'Supabase schema fixtures';
 try {
   await db.exec(`
     create role anon nologin;
     create role authenticated nologin;
     create role service_role nologin bypassrls;
     create schema auth;
-    create table auth.users(id uuid primary key, email text, raw_user_meta_data jsonb default '{}');
+    create table auth.users(id uuid primary key, email text, email_confirmed_at timestamptz, raw_user_meta_data jsonb default '{}');
     create function auth.uid() returns uuid language sql stable as $$
       select (current_setting('request.jwt.claims', true)::jsonb ->> 'sub')::uuid;
     $$;
@@ -35,9 +36,11 @@ try {
   const directory = new URL('supabase/migrations/', root);
   const files = (await readdir(directory)).filter(file => file.endsWith('.sql')).sort();
   for (const file of files) {
+    stage = file;
     await db.exec(await readFile(new URL(file, directory), 'utf8'));
     console.log(`Applied ${file}`);
   }
+  stage = 'Acceptance identity fixtures';
   await db.exec(`insert into auth.users(id,email) values
     ('11111111-1111-4111-8111-111111111111','owner@example.invalid'),
     ('22222222-2222-4222-8222-222222222222','viewer@example.invalid'),
@@ -47,12 +50,13 @@ try {
   const tests = (await readdir(testDirectory)).filter(file => file.endsWith('_acceptance.sql')).sort();
   if (!tests.length) throw new Error('No SQL acceptance files discovered');
   for (const file of tests) {
+    stage = file;
     await db.exec(await readFile(new URL(file, testDirectory), 'utf8'));
     console.log(`Passed ${file}`);
   }
   console.log(`PASS: ${files.length} unmodified migrations; ${tests.length} SQL acceptance files on fresh PGlite (Supabase services are not exercised).`);
 } catch (error) {
-  console.error(`FAIL: ${error.message} (${error.code ?? 'no SQLSTATE'})`);
+  console.error(`FAIL at ${stage}: ${error.message} (${error.code ?? 'no SQLSTATE'})`);
   process.exitCode = 1;
 } finally {
   await db.close();

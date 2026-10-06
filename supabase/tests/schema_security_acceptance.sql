@@ -9,7 +9,7 @@ begin
   if missing is not null then raise exception 'Public tables without RLS: %', missing; end if;
 
   if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
-      where n.nspname='public' and c.relkind in ('r','p')) <> 11 then
+      where n.nspname='public' and c.relkind in ('r','p')) <> 12 then
     raise exception 'Application table inventory changed; review security coverage';
   end if;
 

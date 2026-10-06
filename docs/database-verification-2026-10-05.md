@@ -1,5 +1,11 @@
 # Database and RLS verification — 2026-10-05
 
+Follow-up implementation: CLI 2.119.0 and local configuration are now present,
+with native SQL, HTTP/Realtime and concurrency runners plus a dedicated CI job.
+See [supabase-integration.md](supabase-integration.md) for current commands and
+evidence. The prerequisite observations below describe the earlier audit;
+Docker/Podman and psql remain unavailable and full-stack acceptance is pending.
+
 ## Result
 
 The repository has local SQL acceptance evidence, but clean-database verification

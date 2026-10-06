@@ -10,10 +10,11 @@ export const mediaFormats = {
   'application/pdf': { kind: 'document', extension: 'pdf' },
 } as const;
 export type MediaMime = keyof typeof mediaFormats;
-export function validateMediaMetadata(size: number, mime: string): string | null {
-  if (!Number.isSafeInteger(size) || size <= 0) return 'Выберите непустой файл.';
-  if (size > maxMediaBytes) return 'Размер файла не должен превышать 50 МиБ.';
-  if (!Object.hasOwn(mediaFormats, mime)) return 'Формат файла не поддерживается.';
+export type MediaMetadataError = 'empty' | 'tooLarge' | 'unsupportedFormat';
+export function validateMediaMetadata(size: number, mime: string): MediaMetadataError | null {
+  if (!Number.isSafeInteger(size) || size <= 0) return 'empty';
+  if (size > maxMediaBytes) return 'tooLarge';
+  if (!Object.hasOwn(mediaFormats, mime)) return 'unsupportedFormat';
   return null;
 }
 const matches = (bytes: Uint8Array, values: number[], offset = 0) => values.every((value, index) => bytes[offset + index] === value);
