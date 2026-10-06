@@ -117,12 +117,39 @@ function randomEmail(role) {
   return `supabase-acceptance-${role}-${randomUUID()}@example.test`;
 }
 
-async function waitForSubscription(channel, label) {
+async function waitForSubscription(channel, label, diagnostics) {
   return withTimeout(new Promise((resolve, reject) => {
+    let subscribed = false;
+    let replicationReady = false;
+    const finishIfReady = () => {
+      if (subscribed && replicationReady) resolve('SUBSCRIBED');
+    };
+    channel.on('system', {}, (payload) => {
+      if (payload?.extension !== 'postgres_changes') return;
+      const systemStatus = payload?.status;
+      if (systemStatus === 'ok' || systemStatus === 'error') diagnostics.systemStatuses.push(systemStatus);
+      if (systemStatus === 'error') {
+        reject(new AcceptanceError(`${label} Realtime Postgres Changes replication subscription was rejected`));
+        return;
+      }
+      if (systemStatus === 'ok') {
+        replicationReady = true;
+        finishIfReady();
+      }
+    });
     channel.subscribe((status, error) => {
-      if (status === 'SUBSCRIBED') resolve(status);
+      if (/^[A-Z_]{1,24}$/.test(status ?? '')) diagnostics.statuses.push(status);
+      const errorCode = error && typeof error === 'object' && typeof error.code === 'string'
+        && /^[A-Za-z0-9_-]{1,24}$/.test(error.code)
+        ? error.code
+        : undefined;
+      if (errorCode) diagnostics.errorCodes.push(errorCode);
+      if (status === 'SUBSCRIBED') {
+        subscribed = true;
+        finishIfReady();
+      }
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-        reject(new AcceptanceError(`${label} Realtime subscription ended with ${status}`));
+        reject(new AcceptanceError(`${label} Realtime subscription ended with ${status}${errorCode ? ` (error code ${errorCode})` : ''}`));
       }
     });
   }), REALTIME_TIMEOUT_MS, `${label} Realtime subscription`);
@@ -319,6 +346,11 @@ async function run() {
     const receivedByOwner = [];
     const receivedByViewer = [];
     const receivedByOutsider = [];
+    const realtimeDiagnostics = {
+      owner: { statuses: [], systemStatuses: [], errorCodes: [] },
+      viewer: { statuses: [], systemStatuses: [], errorCodes: [] },
+      outsider: { statuses: [], systemStatuses: [], errorCodes: [] },
+    };
     await Promise.all([owner, viewer, outsider].map(async (user) => {
       await user.client.realtime.setAuth(user.token);
     }));
@@ -329,7 +361,11 @@ async function run() {
     const outsiderChannel = outsider.client.channel(`acceptance-outsider-${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => receivedByOutsider.push(payload.new));
     channels.push(ownerChannel, viewerChannel, outsiderChannel);
-    await Promise.all([waitForSubscription(ownerChannel, 'Owner'), waitForSubscription(viewerChannel, 'Viewer'), waitForSubscription(outsiderChannel, 'Outsider')]);
+    await Promise.all([
+      waitForSubscription(ownerChannel, 'Owner', realtimeDiagnostics.owner),
+      waitForSubscription(viewerChannel, 'Viewer', realtimeDiagnostics.viewer),
+      waitForSubscription(outsiderChannel, 'Outsider', realtimeDiagnostics.outsider),
+    ]);
     expectSuccess(await owner.client.from('messages').insert({
       project_id: projectId, sender_id: owner.id, body: `Realtime acceptance ${suffix}`,
     }).select('id').single(), 'Owner inserts project message');
@@ -338,7 +374,14 @@ async function run() {
       const started = Date.now();
       const poll = () => {
         if (receivedByOwner.length) return resolve();
-        if (Date.now() - started >= REALTIME_TIMEOUT_MS) return reject(new AcceptanceError('Owner did not receive the project message over Realtime'));
+        if (Date.now() - started >= REALTIME_TIMEOUT_MS) {
+          const ownerStates = realtimeDiagnostics.owner.statuses.join(',') || 'none';
+          const viewerStates = realtimeDiagnostics.viewer.statuses.join(',') || 'none';
+          const outsiderStates = realtimeDiagnostics.outsider.statuses.join(',') || 'none';
+          const ownerReplication = realtimeDiagnostics.owner.systemStatuses.join(',') || 'none';
+          const ownerCodes = realtimeDiagnostics.owner.errorCodes.join(',') || 'none';
+          return reject(new AcceptanceError(`Owner did not receive the project message over Realtime (channel statuses owner=${ownerStates}, viewer=${viewerStates}, outsider=${outsiderStates}; owner replication statuses=${ownerReplication}; owner error codes=${ownerCodes}; event counts owner=${receivedByOwner.length}, viewer=${receivedByViewer.length}, outsider=${receivedByOutsider.length})`));
+        }
         setTimeout(poll, 50);
       };
       poll();
