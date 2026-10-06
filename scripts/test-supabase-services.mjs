@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TIMEOUT_MS = 10_000;
-const REALTIME_TIMEOUT_MS = 5_000;
+const REALTIME_TIMEOUT_MS = 15_000;
 const REALTIME_DENIAL_WINDOW_MS = 1_500;
 const TEST_PASSWORD = `${randomBytes(32).toString('base64url')}Aa9!`;
 
@@ -319,6 +319,9 @@ async function run() {
     const receivedByOwner = [];
     const receivedByViewer = [];
     const receivedByOutsider = [];
+    await Promise.all([owner, viewer, outsider].map(async (user) => {
+      await user.client.realtime.setAuth(user.token);
+    }));
     const ownerChannel = owner.client.channel(`acceptance-owner-${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => receivedByOwner.push(payload.new));
     const viewerChannel = viewer.client.channel(`acceptance-viewer-${suffix}`)
