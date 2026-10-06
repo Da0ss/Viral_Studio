@@ -160,13 +160,21 @@ async function run() {
     const outsider = await createUser('outsider');
     step('temporary owner, viewer, and outsider can authenticate');
 
+    const newOrganizationId = randomUUID();
+    organizationId = newOrganizationId;
+    expectSuccess(await owner.client.from('organizations')
+      .insert({ id: newOrganizationId, name: `Service acceptance ${suffix}`, slug: `acceptance-${suffix}`, created_by: owner.id }),
+    'Create temporary organization');
     const organization = expectSuccess(await owner.client.from('organizations')
-      .insert({ name: `Service acceptance ${suffix}`, slug: `acceptance-${suffix}`, created_by: owner.id })
-      .select('id').single(), 'Create temporary organization');
+      .select('id').eq('id', newOrganizationId).single(), 'Read temporary organization after onboarding');
     organizationId = organization.id;
+    const newProjectId = randomUUID();
+    projectId = newProjectId;
+    expectSuccess(await owner.client.from('projects')
+      .insert({ id: newProjectId, organization_id: organizationId, name: `Acceptance ${suffix}`, created_by: owner.id }),
+    'Create temporary project');
     const project = expectSuccess(await owner.client.from('projects')
-      .insert({ organization_id: organizationId, name: `Acceptance ${suffix}`, created_by: owner.id })
-      .select('id').single(), 'Create temporary project');
+      .select('id').eq('id', newProjectId).single(), 'Read temporary project after onboarding');
     projectId = project.id;
 
     expectSuccess(await owner.client.from('organization_members')
