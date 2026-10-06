@@ -41,6 +41,10 @@ jobs:
         run: pnpm test:db:supabase
       - name: Storage HTTP and authenticated Realtime acceptance
         run: pnpm test:db:services
+      - name: Isolate concurrency fixtures from service cleanup jobs
+        # Storage teardown intentionally leaves durable cleanup outbox work.
+        # The global-claim concurrency suite requires its own empty queue.
+        run: pnpm db:local:reset > /dev/null
       - name: Two-session ownership acceptance
         run: pnpm test:db:concurrency
       - name: Install Chromium and system dependencies

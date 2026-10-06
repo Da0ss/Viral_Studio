@@ -119,7 +119,7 @@ function parseLocalConnection(raw) {
   };
 }
 
-async function sql(statement, { timeout = timeoutMs } = {}) {
+async function sql(statement, { timeout = timeoutMs, label = 'Concurrency SQL' } = {}) {
   const env = {
     ...process.env,
     PGPASSWORD: connection.password,
@@ -127,15 +127,19 @@ async function sql(statement, { timeout = timeoutMs } = {}) {
     ...(connection.sslmode ? { PGSSLMODE: connection.sslmode } : {}),
   };
   const args = [
-    '-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
+    '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose',
     '-h', connection.host, '-p', connection.port,
     '-U', connection.user, '-d', connection.database,
   ];
   const result = await run('psql', args, { input: statement, env, timeout, cwd: repoRoot });
   if (result.timedOut) throw new Error('psql exceeded the bounded timeout.');
   if (result.code !== 0) {
-    // Do not echo server diagnostics: they may include deployment details.
-    throw new Error(`psql failed with exit code ${result.code}.`);
+    // Report only structured, numeric diagnostics; never echo SQL or raw server details.
+    const sqlstate = /ERROR:\s+([0-9A-Z]{5}):/.exec(result.stderr)?.[1];
+    const inputLine = /LINE\s+(\d+):/.exec(result.stderr)?.[1];
+    const plpgsqlLine = /CONTEXT:\s+PL\/pgSQL function [^\r\n]*? line (\d+) at /.exec(result.stderr)?.[1];
+    const safeLocation = inputLine ? `, SQL input line ${inputLine}` : plpgsqlLine ? `, PL/pgSQL line ${plpgsqlLine}` : '';
+    throw new Error(`${label} failed in psql (exit code ${result.code}${sqlstate ? `, SQLSTATE ${sqlstate}` : ''}${safeLocation}).`);
   }
   return result.stdout.trim();
 }
@@ -199,7 +203,7 @@ async function setupFixtures() {
     insert into private.media_deletion_outbox(asset_id, project_id, object_path)
     values ('${assetIds[0]}', '${projectId}', '${paths[0]}'),
            ('${assetIds[1]}', '${projectId}', '${paths[1]}');
-  `);
+  `, { label: 'Concurrency fixture setup' });
 }
 
 function psqlArgs() {
