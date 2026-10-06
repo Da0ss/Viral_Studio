@@ -1,6 +1,10 @@
 -- Invitation links are one-time, email-bound bearer tokens. All writes roll back.
 begin;
-update auth.users set email_confirmed_at = now();
+do $$ begin
+  if exists(select 1 from auth.users where email_confirmed_at is null) then
+    raise exception 'Invitation acceptance fixtures require verified Auth users';
+  end if;
+end $$;
 
 insert into public.team_invitations(id, organization_id, project_id, email, organization_role, project_role, token_hash, invited_by, expires_at)
 values

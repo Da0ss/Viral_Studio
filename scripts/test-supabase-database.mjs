@@ -145,7 +145,7 @@ function psqlEnvironment(databaseUrl) {
 }
 
 async function runSql(psqlEnv, sql, label, options = {}) {
-  const result = await run('psql', ['--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1', '--set', 'VERBOSITY=sqlstate', ...(options.capture ? ['--tuples-only', '--no-align'] : [])], {
+  const result = await run('psql', ['--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1', '--set', 'VERBOSITY=verbose', ...(options.capture ? ['--tuples-only', '--no-align'] : [])], {
     cwd: root,
     env: psqlEnv,
     input: sql,
@@ -154,7 +154,8 @@ async function runSql(psqlEnv, sql, label, options = {}) {
   if (result.code !== 0) {
     // Keep diagnostics useful without exposing connection details or SQL/data.
     const sqlstate = /ERROR:\s*([0-9A-Z]{5})\b/.exec(result.stderr)?.[1];
-    fail(`${label} failed in psql (exit ${result.code ?? 'unknown'}${sqlstate ? `, SQLSTATE ${sqlstate}` : ''}); inspect the local database logs for details`);
+    const plpgsqlLine = /CONTEXT:\s*PL\/pgSQL function [^\r\n]*? line (\d+) at /.exec(result.stderr)?.[1];
+    fail(`${label} failed in psql (exit ${result.code ?? 'unknown'}${sqlstate ? `, SQLSTATE ${sqlstate}` : ''}${plpgsqlLine ? `, PL/pgSQL line ${plpgsqlLine}` : ''}); inspect the local database logs for details`);
   }
   return options.capture ? result.stdout.trim() : undefined;
 }
