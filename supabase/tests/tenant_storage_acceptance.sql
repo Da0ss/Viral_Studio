@@ -1,5 +1,8 @@
 -- Disposable database only; requires the three seed identities. All writes roll back.
 begin;
+-- Supabase Storage blocks direct SQL deletes to prevent orphaned blobs. Limit
+-- the documented override to this rolled-back transaction while exercising RLS.
+select set_config('storage.allow_delete_query','true',true);
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}';
 
