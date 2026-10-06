@@ -19,12 +19,12 @@ export default async function MediaPage({ searchParams }: { searchParams: Promis
   const projectPages = Math.max(1, Math.ceil(projectList.total / projectPageSize));
   const url = (mediaPage: number, selectionPage: number) => mediaNavigationUrl(mediaPage, selectionPage, filters.search);
   const pages = Math.max(1, Math.ceil(result.total / mediaPageSize));
-  return <main className="page migration-page notifications-page"><h1>{t('media.title')}</h1>
+  return <main className="page migration-page notifications-page media-page"><h1>{t('media.title')}</h1>
     <p>{t('media.description')}</p>
-    <form method="get"><input type="hidden" name="page" value={page} /><label>{t('media.searchProject')}<input name="projectQuery" defaultValue={filters.search} maxLength={80} /></label><button className="ghost-button" type="submit">{t('media.findProject')}</button></form>
+    <form className="media-project-search" method="get"><input type="hidden" name="page" value={page} /><label>{t('media.searchProject')}<input name="projectQuery" defaultValue={filters.search} maxLength={80} /></label><button className="ghost-button" type="submit">{t('media.findProject')}</button></form>
     {projectList.error ? <p role="alert">{t('media.projectsError')}</p> : <><MediaUpload key={`${filters.search}:${projectPage}`} projects={projectList.projects.filter(item => item.role === 'owner' || item.role === 'editor').map(({ id, name }) => ({ id, name }))} /><nav className="project-pagination" aria-label={t('media.searchProject')}>{projectPage > 1 && <a href={url(page, projectPage - 1)}>← {t('team.project')}</a>}<span>{t('media.projectPages',{page:projectPage,pages:projectPages})}</span>{projectPage < projectPages && <a href={url(page, projectPage + 1)}>{t('team.project')} →</a>}</nav></>}
     {result.error ? <p role="alert">{result.error}</p> : <>
-      {!result.items.length && <p>{page === 1 ? t('media.noItems') : t('media.noItemsPage')}</p>}
+      {!result.items.length && <p className="media-empty">{page === 1 ? t('media.noItems') : t('media.noItemsPage')}</p>}
       <div className="notifications-list">{result.items.map(item => <article className="notification-card" key={item.id}>
         <h2>{item.name}</h2><p>{item.kind} · {item.mime_type} · {new Intl.NumberFormat(locale).format(item.size_bytes)} {t('media.bytes')}</p>
         <MediaDownload id={item.id} canDelete={item.role === 'owner' || item.role === 'editor'} />

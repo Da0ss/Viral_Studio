@@ -111,12 +111,12 @@ export function MediaUpload({ projects, versionTarget }: { projects: { id: strin
     finally { busy.current = false; setPending(false); }
   }
   if (!versionTarget && !projects.length) return <p>{t('media.noneAvailable')}</p>;
-  return <form onSubmit={submit} aria-label={t('media.formLabel')} aria-busy={pending}>
+  return <form className="media-upload" onSubmit={submit} aria-label={t('media.formLabel')} aria-busy={pending}>
     <fieldset disabled={pending}><legend>{t('media.uploadTitle')}</legend>
       {versionTarget ? <input type="hidden" name="project" value={versionTarget.projectId} /> : <label>{t('media.projectLabel')}<select name="project" required defaultValue=""><option value="" disabled>{t('media.chooseProject')}</option>{projects.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}
       <label>{t('media.fileLabel')}<input ref={fileInput} type="file" name="file" required accept={Object.keys(mediaFormats).join(',')} /></label>
       <p>{t('media.rules')}</p>
-      <button type="submit" className="ghost-button" disabled={pending}>{pending ? t('media.uploadingLabel') : t('media.uploadTitle')}</button>
+      <button type="submit" className="media-upload-submit" disabled={pending}>{pending ? t('media.uploadingLabel') : t('media.uploadTitle')}</button>
     </fieldset>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
   </form>;
