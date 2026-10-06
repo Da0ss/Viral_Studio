@@ -8,9 +8,9 @@ import path from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const supabaseDirectory = path.join(root, 'supabase');
 const fixtures = [
-  { key: 'owner', emailLabel: 'owner', placeholder: '11111111-1111-4111-8111-111111111111' },
-  { key: 'viewer', emailLabel: 'viewer', placeholder: '22222222-2222-4222-8222-222222222222' },
-  { key: 'outsider', emailLabel: 'outsider', placeholder: '33333333-3333-4333-8333-333333333333' },
+  { key: 'owner', emailLabel: 'owner', placeholder: '11111111-1111-4111-8111-111111111111', emailPlaceholder: 'owner@example.invalid' },
+  { key: 'viewer', emailLabel: 'viewer', placeholder: '22222222-2222-4222-8222-222222222222', emailPlaceholder: 'viewer@example.invalid' },
+  { key: 'outsider', emailLabel: 'outsider', placeholder: '33333333-3333-4333-8333-333333333333', emailPlaceholder: 'outsider@example.invalid' },
 ];
 
 function fail(message) {
@@ -166,6 +166,7 @@ function replaceFixtureIds(sql, usersByKey) {
     const user = usersByKey.get(fixture.key);
     if (!user) fail(`Missing Auth fixture ${fixture.key}`);
     result = result.replaceAll(fixture.placeholder, user.id);
+    result = result.replaceAll(fixture.emailPlaceholder, user.email);
   }
   return result;
 }

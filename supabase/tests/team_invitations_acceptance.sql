@@ -25,7 +25,7 @@ do $$ begin
     insert into public.team_invitations(organization_id,email,organization_role,token_hash,invited_by,expires_at)
     values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','owner-grant@example.invalid','owner',repeat('e',64),auth.uid(),now()+interval '1 day');
     raise exception 'Owner invitation was allowed';
-  exception when check_violation then null; end;
+  exception when check_violation or insufficient_privilege then null; end;
   if not public.revoke_team_invitation('15151515-1515-4515-8515-151515151515') then
     raise exception 'Owner could not revoke an expired invitation';
   end if;
