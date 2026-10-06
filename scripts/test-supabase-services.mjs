@@ -181,6 +181,9 @@ async function run() {
       .insert({ organization_id: organizationId, user_id: viewer.id, role: 'member' }), 'Add viewer to temporary organization');
     expectSuccess(await owner.client.from('project_members')
       .insert({ project_id: projectId, user_id: viewer.id, role: 'viewer' }), 'Add viewer to temporary project');
+    expectDenied(await viewer.client.from('messages').insert({
+      project_id: projectId, sender_id: viewer.id, body: `Viewer denial acceptance ${suffix}`,
+    }).select('id').single(), 'Viewer inserts a message without commenter permission');
 
     const inviteToken = randomBytes(32).toString('base64url');
     const inviteHash = createHash('sha256').update(inviteToken).digest('hex');
@@ -324,9 +327,6 @@ async function run() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => receivedByOutsider.push(payload.new));
     channels.push(ownerChannel, viewerChannel, outsiderChannel);
     await Promise.all([waitForSubscription(ownerChannel, 'Owner'), waitForSubscription(viewerChannel, 'Viewer'), waitForSubscription(outsiderChannel, 'Outsider')]);
-    expectDenied(await viewer.client.from('messages').insert({
-      project_id: projectId, sender_id: viewer.id, body: `Realtime acceptance ${suffix}`,
-    }).select('id').single(), 'Viewer inserts a message without commenter permission');
     expectSuccess(await owner.client.from('messages').insert({
       project_id: projectId, sender_id: owner.id, body: `Realtime acceptance ${suffix}`,
     }).select('id').single(), 'Owner inserts project message');
