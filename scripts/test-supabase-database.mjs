@@ -145,16 +145,16 @@ function psqlEnvironment(databaseUrl) {
 }
 
 async function runSql(psqlEnv, sql, label, options = {}) {
-  const result = await run('psql', ['--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1', ...(options.capture ? ['--tuples-only', '--no-align'] : [])], {
+  const result = await run('psql', ['--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1', '--set', 'VERBOSITY=sqlstate', ...(options.capture ? ['--tuples-only', '--no-align'] : [])], {
     cwd: root,
     env: psqlEnv,
     input: sql,
     timeoutMs: options.timeoutMs ?? 120_000,
   });
   if (result.code !== 0) {
-    // psql diagnostics may contain connection details or interpolated SQL. Do
-    // not emit them; the suite file is sufficient to locate the failing case.
-    fail(`${label} failed in psql (exit ${result.code ?? 'unknown'}); inspect the local database logs for details`);
+    // Keep diagnostics useful without exposing connection details or SQL/data.
+    const sqlstate = /ERROR:\s*([0-9A-Z]{5})\b/.exec(result.stderr)?.[1];
+    fail(`${label} failed in psql (exit ${result.code ?? 'unknown'}${sqlstate ? `, SQLSTATE ${sqlstate}` : ''}); inspect the local database logs for details`);
   }
   return options.capture ? result.stdout.trim() : undefined;
 }
