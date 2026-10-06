@@ -1,85 +1,94 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { POST } from '@/app/api/projects/[projectId]/media/route';
-const mocks = vi.hoisted(() => ({ client: vi.fn() }));
+import { GET, POST } from '@/app/api/projects/[projectId]/media/route';
+import { createHash } from 'node:crypto';
+
+const mocks = vi.hoisted(() => ({ client: vi.fn(), admin: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.client }));
-const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const context = { params: Promise.resolve({ projectId: id }) };
-function request(origin = 'http://localhost', bytes = new Uint8Array([137,80,78,71,13,10,26,10])) {
-  const form = new FormData(); form.set('file', new File([bytes], '../../photo.html', { type: 'image/png' }));
-  return new Request(`http://localhost/api/projects/${id}/media`, { method: 'POST', headers: { origin }, body: form });
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.admin }));
+const project = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const intentId = '12121212-1212-4212-8212-121212121212';
+const lease = '13131313-1313-4313-8313-131313131313';
+const key = '14141414-1414-4414-8414-141414141414';
+const path = `projects/${project}/${intentId}/photo.png`;
+const png = new Uint8Array([137,80,78,71,13,10,26,10]);
+const hash = createHash('sha256').update(png).digest('hex');
+const context = { params: Promise.resolve({ projectId: project }) };
+function request(origin = 'http://localhost', withKey = true) {
+  const headers = new Headers({ origin, 'content-type': 'application/json' });
+  if (withKey) headers.set('idempotency-key', key);
+  return new Request(`http://localhost/api/projects/${project}/media`, { method: 'POST', headers,
+    body: JSON.stringify({ sha256: hash, mimeType: 'image/png', fileName: 'photo.png', size: png.length }) });
 }
-function setup(role = 'owner', inserted = true, user = true) {
-  const member = { eq: vi.fn(), maybeSingle: vi.fn().mockResolvedValue({ data: { role }, error: null }) }; member.eq.mockReturnValue(member);
-  const insertQuery = { select: vi.fn(), maybeSingle: vi.fn().mockResolvedValue({ data: inserted ? { id: 'asset' } : null, error: null }) }; insertQuery.select.mockReturnValue(insertQuery);
-  const insert = vi.fn(() => insertQuery);
-  const bucket = { upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn().mockResolvedValue({ error: null }) };
-  mocks.client.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: user ? { id: 'user' } : null }, error: null }) }, from: vi.fn((table) => table === 'project_members' ? { select: vi.fn(() => member) } : { insert }), storage: { from: vi.fn(() => bucket) } });
-  return { bucket, insert };
+function setup(options: { outcome?: string; status?: string; beginError?: boolean; existingToken?: string } = {}) {
+  const bucket = { createSignedUploadUrl: vi.fn().mockResolvedValue({ data: { token: 'signed-token', signedUrl: '/signed' }, error: null }) };
+  const clientRpc = vi.fn(async (name: string) => {
+    if (name === 'get_media_upload_status') return { data: [{ outcome: options.status ?? 'none', asset_id: options.status === 'completed' ? 'asset' : null }], error: null };
+    if (name === 'begin_media_upload') {
+      if (options.beginError) return { data: null, error: { code: '42501' } };
+      const outcome = options.outcome ?? 'upload';
+      return { data: [{ outcome, intent_id: intentId, lease_token: lease, object_path: path, asset_id: outcome === 'completed' ? 'asset' : null }], error: null };
+    }
+    if (name === 'assert_media_upload_lease') return { data: true, error: null };
+    return { data: null, error: { message: 'unexpected caller RPC' } };
+  });
+  const adminRpc = vi.fn(async (_name: string, args: { signed_token?: string }) => ({
+    data: [{ upload_token: args.signed_token ?? options.existingToken ?? null, expires_at: '2026-10-06T12:00:00.000Z' }], error: null,
+  }));
+  mocks.client.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user' } }, error: null }) }, rpc: clientRpc });
+  mocks.admin.mockReturnValue({ rpc: adminRpc, storage: { from: vi.fn(() => bucket) } });
+  return { clientRpc, adminRpc, bucket };
 }
 beforeEach(() => vi.resetAllMocks());
-it('rejects declared oversized requests before backend access', async () => {
-  const req = request();
-  req.headers.set('content-length', String(52 * 1024 * 1024));
-  const response = await POST(req, context);
-  expect(response.status).toBe(413);
-  expect(response.headers.get('cache-control')).toBe('no-store');
-  expect(mocks.client).not.toHaveBeenCalled();
-});
-it.each([undefined, '1'])('cancels oversized streamed bytes even when Content-Length is %s', async length => {
-  const client = setup();
-  const cancelled = vi.fn();
-  // Reuse a chunk: test the actual byte-counting loop without allocating a
-  // second giant fixture or allowing the stream to run forever.
-  const chunk = new Uint8Array(1024 * 1024);
-  const stream = new ReadableStream<Uint8Array>({ pull(controller) { controller.enqueue(chunk); }, cancel: cancelled });
-  const headers: Record<string, string> = { origin: 'http://localhost', 'content-type': 'multipart/form-data; boundary=test' };
-  if (length) headers['content-length'] = length;
-  const init = { method: 'POST', headers, body: stream, duplex: 'half' };
-  const response = await POST(new Request(`http://localhost/api/projects/${id}/media`, init), context);
-  expect(response.status).toBe(413);
-  expect(cancelled).toHaveBeenCalledTimes(1);
-  expect(client.bucket.upload).not.toHaveBeenCalled();
-  expect(client.insert).not.toHaveBeenCalled();
-});
-it('rejects malformed multipart bodies without Storage writes', async () => {
-  const client = setup();
-  const response = await POST(new Request(`http://localhost/api/projects/${id}/media`, { method: 'POST', headers: { origin: 'http://localhost', 'content-type': 'multipart/form-data; boundary=test' }, body: 'malformed' }), context);
-  expect(response.status).toBe(400);
-  expect(client.bucket.upload).not.toHaveBeenCalled();
-});
-it('does not disclose backend exceptions', async () => {
-  mocks.client.mockRejectedValue(new Error('SQL secret stack'));
-  const response = await POST(request(), context);
-  expect(response.status).toBe(502);
-  expect(await response.text()).not.toMatch(/SQL|secret|stack/);
-});
-it('rejects cross-origin requests before backend access', async () => {
+
+it('requires same-origin requests and a UUID idempotency key', async () => {
   expect((await POST(request('https://attacker.invalid'), context)).status).toBe(403);
+  expect((await POST(request('http://localhost', false), context)).status).toBe(400);
   expect(mocks.client).not.toHaveBeenCalled();
 });
-it.each(['viewer', 'commenter'])('denies %s upload', async role => {
-  const client = setup(role);
-  expect((await POST(request(), context)).status).toBe(403);
-  expect(client.bucket.upload).not.toHaveBeenCalled();
+it('bounds the metadata request body before parsing', async () => {
+  setup();
+  const stream = new ReadableStream<Uint8Array>({ pull(controller) { controller.enqueue(new Uint8Array(20_000)); } });
+  const response = await POST(new Request(`http://localhost/api/projects/${project}/media`, { method: 'POST', headers: { origin: 'http://localhost', 'content-type': 'application/json', 'idempotency-key': key }, body: stream, duplex: 'half' } as RequestInit), context);
+  expect(response.status).toBe(413);
 });
-it('denies guests', async () => {
-  setup('owner', true, false);
-  expect((await POST(request(), context)).status).toBe(401);
-});
-it('rejects content-type spoofing before Storage writes', async () => {
+it('reserves the quota then returns the persisted signed token for the canonical path', async () => {
   const client = setup();
-  expect((await POST(request('http://localhost', new Uint8Array([1,2,3])), context)).status).toBe(400);
-  expect(client.bucket.upload).not.toHaveBeenCalled();
+  const response = await POST(request(), context);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ intentId, leaseToken: lease, path, token: 'signed-token' });
+  expect(client.clientRpc).toHaveBeenCalledWith('begin_media_upload', expect.objectContaining({ target_project: project, request_key: key, content_hash: hash, content_type: 'image/png', upload_size: png.length }));
+  expect(client.bucket.createSignedUploadUrl).toHaveBeenCalledWith(path, { upsert: false });
+  expect(client.adminRpc).toHaveBeenCalledWith('store_media_upload_token', { target_intent: intentId, token: lease, signed_token: 'signed-token' });
 });
-it('uploads immutable bytes with server-owned paths and creator', async () => {
-  const client = setup();
+it('replays the durable signed token without minting a new capability', async () => {
+  const client = setup({ existingToken: 'persisted-token' });
+  const response = await POST(request(), context);
+  expect(response.status).toBe(200);
+  expect((await response.json()).token).toBe('persisted-token');
+  expect(client.bucket.createSignedUploadUrl).not.toHaveBeenCalled();
+});
+it('returns a completed idempotent result without creating another signed URL', async () => {
+  const client = setup({ outcome: 'completed' });
   expect((await POST(request(), context)).status).toBe(201);
-  expect(client.bucket.upload.mock.calls[0][0]).toMatch(new RegExp(`^projects/${id}/[0-9a-f-]+/photo\\.png$`));
-  expect(client.bucket.upload.mock.calls[0][2]).toEqual({ contentType: 'image/png', upsert: false });
-  expect(client.insert.mock.calls[0][0]).toMatchObject({ project_id: id, created_by: 'user', kind: 'image' });
+  expect(client.bucket.createSignedUploadUrl).not.toHaveBeenCalled();
 });
-it('cleans up an upload if metadata is not saved', async () => {
-  const client = setup('editor', false);
-  expect((await POST(request(), context)).status).toBe(502);
-  expect(client.bucket.remove).toHaveBeenCalledWith([client.bucket.upload.mock.calls[0][0]]);
+it('communicates quota, role and mismatched-payload outcomes', async () => {
+  const quota = setup({ outcome: 'quota' });
+  expect((await POST(request(), context)).status).toBe(429);
+  vi.resetAllMocks();
+  const forbidden = setup({ beginError: true });
+  expect((await POST(request(), context)).status).toBe(403);
+  vi.resetAllMocks();
+  const conflict = setup({ outcome: 'conflict' });
+  expect((await POST(request(), context)).status).toBe(409);
+  expect(quota.bucket.createSignedUploadUrl).not.toHaveBeenCalled();
+  expect(forbidden.bucket.createSignedUploadUrl).not.toHaveBeenCalled();
+  expect(conflict.bucket.createSignedUploadUrl).not.toHaveBeenCalled();
+});
+it('reports durable status for a repeated payload key', async () => {
+  const client = setup({ status: 'completed' });
+  const response = await GET(new Request(`http://localhost/api/projects/${project}/media`, { headers: { 'idempotency-key': key, 'x-content-sha256': hash } }), context);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ status: 'completed', id: 'asset' });
+  expect(client.clientRpc).toHaveBeenCalledWith('get_media_upload_status', { target_project: project, request_key: key, content_hash: hash });
 });

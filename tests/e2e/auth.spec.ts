@@ -11,6 +11,7 @@ test.describe('authenticated user', () => {
     await page.getByLabel('Email').fill(email!);
     await page.getByLabel('Пароль').fill(password!);
     await page.getByRole('button', { name: 'Войти' }).click();
+    await expect(page).toHaveURL(/\/(?:create|onboarding)(?:\?|$)/);
     await page.goto('/projects');
     await expect(page.getByRole('heading', { name: 'ПРОЕКТЫ' })).toBeVisible();
   });

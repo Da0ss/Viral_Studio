@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectChat } from '@/components/project-chat';
 import type { ChatMessage } from '@/types/messages';
+import { LocaleProvider } from '@/components/locale-provider';
 const mocks = vi.hoisted(() => ({ client: vi.fn(), send: vi.fn() }));
 vi.mock('@/lib/supabase/browser', () => ({ createClient: mocks.client }));
 vi.mock('@/actions/messages', () => ({ sendMessage: mocks.send }));
@@ -25,9 +26,26 @@ function setup() {
 beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1; }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe('chat realtime reconciliation', () => {
+  it('shows offline immediately and recreates the subscription on network recovery', async () => {
+    const realtime = setup();
+    const view = render(<LocaleProvider locale="ru"><ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} /></LocaleProvider>);
+    await act(async () => realtime.status('SUBSCRIBED'));
+    expect(screen.getByText('Онлайн')).toBeTruthy();
+    await act(async () => window.dispatchEvent(new Event('offline')));
+    expect(screen.getByText('Нет соединения')).toBeTruthy();
+    await act(async () => realtime.status('SUBSCRIBED'));
+    expect(screen.queryByText('Онлайн')).toBeNull();
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(realtime.removeChannel).toHaveBeenCalledTimes(1);
+    await act(async () => realtime.status('SUBSCRIBED'));
+    expect(screen.getByText('Онлайн')).toBeTruthy();
+    view.unmount();
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(realtime.removeChannel).toHaveBeenCalledTimes(2);
+  });
   it('deduplicates repeated inserts and sorts equal timestamps by id', async () => {
     const realtime = setup();
-    render(<ProjectChat projectId={projectId} currentUserId="me" canSend={false} initialMessages={[message('b', 'Second')]} />);
+    render(<LocaleProvider locale="ru"><ProjectChat projectId={projectId} currentUserId="me" canSend={false} initialMessages={[message('b', 'Second')]} /></LocaleProvider>);
     await act(async () => { realtime.receive(message('a', 'First')); realtime.receive(message('a', 'First')); });
     expect(screen.getAllByText('First')).toHaveLength(1);
     expect([...document.querySelectorAll('.project-chat__message p')].map(node => node.textContent)).toEqual(['First', 'Second']);
@@ -37,7 +55,7 @@ describe('chat realtime reconciliation', () => {
     const realtime = setup();
     let resolve!: (value: unknown) => void;
     mocks.send.mockReturnValue(new Promise(yes => { resolve = yes; }));
-    render(<ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} />);
+    render(<LocaleProvider locale="ru"><ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} /></LocaleProvider>);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Новое сообщение'), 'Hello');
     await user.click(screen.getByRole('button', { name: 'Отправить' }));
@@ -50,7 +68,7 @@ describe('chat realtime reconciliation', () => {
   it('restores the draft and removes optimistic messages after failure', async () => {
     setup();
     mocks.send.mockRejectedValue(new Error('private internal details'));
-    render(<ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} />);
+    render(<LocaleProvider locale="ru"><ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} /></LocaleProvider>);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Новое сообщение'), 'Retry me');
     await user.click(screen.getByRole('button', { name: 'Отправить' }));
@@ -63,7 +81,7 @@ describe('chat realtime reconciliation', () => {
     const realtime = setup();
     const missing = message('missing', 'Missed offline');
     realtime.result.mockResolvedValue({ data: [missing], error: null });
-    const view = render(<ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} />);
+    const view = render(<LocaleProvider locale="ru"><ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} /></LocaleProvider>);
     await act(async () => { realtime.receive(missing); realtime.status('SUBSCRIBED'); });
     await waitFor(() => expect(screen.getAllByText('Missed offline')).toHaveLength(1));
     await act(async () => { realtime.status('SUBSCRIBED'); });

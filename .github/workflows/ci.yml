@@ -13,6 +13,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  supabase-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      SUPABASE_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Install pinned package manager
+        run: npm install --global pnpm@11.19.0
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+      - name: Start disposable Supabase stack
+        # Suppress status output containing local service credentials.
+        run: pnpm db:local:start > /dev/null
+      - name: Replay migrations on clean local PostgreSQL
+        run: pnpm db:local:reset > /dev/null
+      - name: Real Auth fixtures and SQL RLS acceptance
+        run: pnpm test:db:supabase
+      - name: Storage HTTP and authenticated Realtime acceptance
+        run: pnpm test:db:services
+      - name: Two-session ownership acceptance
+        run: pnpm test:db:concurrency
+      - name: Install Chromium and system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Authenticated production browser acceptance
+        run: pnpm test:e2e:supabase
+      - name: Stop disposable Supabase stack
+        if: always()
+        run: pnpm supabase stop
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -28,6 +65,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
@@ -49,6 +87,8 @@ jobs:
         run: pnpm build
       - name: Client bundle secret boundary
         run: pnpm test:client-secrets
+      - name: Repository history and SSR secret boundary
+        run: pnpm test:repository-secrets
       - name: Desktop and mobile guest browser acceptance
         run: pnpm exec playwright test --reporter=github,html
       - name: Preserve browser evidence

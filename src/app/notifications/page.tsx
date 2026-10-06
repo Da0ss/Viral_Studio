@@ -4,6 +4,7 @@ import type { Route } from 'next';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/profile';
 import { NotificationReadButton } from '@/components/notification-read-button';
+import { translate } from '@/lib/i18n/messages';
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const supabase = await createClient();
@@ -19,15 +20,16 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     getCurrentProfile(user),
   ]);
   const date = new Intl.DateTimeFormat(profile?.language ?? 'ru', { dateStyle: 'medium', timeStyle: 'short', timeZone: profile?.timezone ?? 'Asia/Qyzylorda' });
+  const locale = profile?.language ?? 'ru'; const t = (key: Parameters<typeof translate>[1], vars?: Record<string, string | number>) => translate(locale, key, vars);
   const pages = Math.max(1, Math.ceil((result.count ?? 0) / pageSize));
-  return <main className="page migration-page notifications-page"><small>ЛИЧНЫЙ INBOX</small><h1>УВЕДОМЛЕНИЯ</h1>
-    {result.error ? <p role="alert">Не удалось загрузить уведомления. Обновите страницу.</p> : <>
-      {!result.data?.length && <p>Уведомлений пока нет.</p>}
+  return <main className="page migration-page notifications-page"><small>{t('notifications.eyebrow')}</small><h1>{t('notifications.title')}</h1>
+    {result.error ? <p role="alert">{t('notifications.error')}</p> : <>
+      {!result.data?.length && <p>{t('notifications.empty')}</p>}
       <div className="notifications-list">{result.data?.map(item => <article key={item.id} className="notification-card">
-        <small>{item.read_at ? 'Прочитано' : 'Новое'} · <time dateTime={item.created_at}>{date.format(new Date(item.created_at))}</time></small>
-        <h2>{item.title}</h2><p>{item.body}</p>{item.project_id && <p><Link href={`/projects/${item.project_id}/chat` as Route}>Открыть чат проекта</Link></p>}{!item.read_at && <NotificationReadButton id={item.id} />}
+        <small>{item.read_at ? t('notifications.read') : t('notifications.new')} · <time dateTime={item.created_at}>{date.format(new Date(item.created_at))}</time></small>
+        <h2>{item.title}</h2><p>{item.body}</p>{item.project_id && <p><Link href={`/projects/${item.project_id}/chat` as Route}>{t('notifications.openChat')}</Link></p>}{!item.read_at && <NotificationReadButton id={item.id} />}
       </article>)}</div>
-      <nav className="project-pagination" aria-label="Страницы уведомлений">{page > 1 && <a href={`?page=${page - 1}`}>← Назад</a>}<span>Страница {page} из {pages}</span>{page < pages && <a href={`?page=${page + 1}`}>Далее →</a>}</nav>
+      <nav className="project-pagination" aria-label={t('notifications.title')}>{page > 1 && <a href={`?page=${page - 1}`}>{t('common.previous')}</a>}<span>{t('common.page',{page,pages})}</span>{page < pages && <a href={`?page=${page + 1}`}>{t('common.next')}</a>}</nav>
     </>}
   </main>;
 }

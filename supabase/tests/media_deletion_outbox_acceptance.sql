@@ -1,6 +1,7 @@
 begin;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111"}',true);
+reset role;
 insert into public.assets(id, project_id, kind, name, storage_path, mime_type, size_bytes, created_by)
 values ('12121212-1212-4212-8212-121212121212','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','image','Cleanup fixture',
 'projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/12121212-1212-4212-8212-121212121212/original.png','image/png',8,'11111111-1111-4111-8111-111111111111');
@@ -11,7 +12,6 @@ insert into public.asset_versions(asset_id,version_number,storage_path,mime_type
 values ('12121212-1212-4212-8212-121212121212',1,'projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/13131313-1313-4313-8313-131313131313/version.png','image/png',8,'11111111-1111-4111-8111-111111111111');
 reset role;
 savepoint before_deletion;
-set local role authenticated;
 delete from public.assets where id='12121212-1212-4212-8212-121212121212';
 reset role;
 do $$ begin
@@ -41,7 +41,7 @@ do $$ begin
     raise exception 'Upload helper exposed to guests';
   end if;
 end $$;
-set local role authenticated;
+set local role service_role;
 do $$ begin
   begin
     insert into public.assets(project_id,kind,name,storage_path,mime_type,size_bytes,created_by)
@@ -55,18 +55,25 @@ do $$ begin
   exception when check_violation then null; end;
 end $$;
 -- A direct Storage metadata INSERT must also reject completed paths.
+reset role;
+set local role authenticated;
 do $$ begin
   begin
     insert into storage.objects(bucket_id,name) values ('project-media',
       'projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/12121212-1212-4212-8212-121212121212/original.png');
     raise exception 'Storage accepted retired original';
-  exception when insufficient_privilege then null; end;
+  exception when insufficient_privilege or check_violation then null; end;
   begin
     insert into storage.objects(bucket_id,name) values ('project-media',
       'projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/13131313-1313-4313-8313-131313131313/version.png');
     raise exception 'Storage accepted retired version';
+  exception when insufficient_privilege or check_violation then null; end;
+end $$;
+do $$ begin
+  begin
+    insert into storage.objects(bucket_id,name) values ('project-media',
+      'projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/15151515-1515-4515-8515-151515151515/fresh.png');
+    raise exception 'Authenticated direct Storage upload bypassed upload intents';
   exception when insufficient_privilege then null; end;
 end $$;
-insert into storage.objects(bucket_id,name) values ('project-media',
-  'projects/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/15151515-1515-4515-8515-151515151515/fresh.png');
 rollback;

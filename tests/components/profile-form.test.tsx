@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProfileForm } from '@/components/profile-form';
 import type { ProfileValues } from '@/types/profile';
+import { LocaleProvider } from '@/components/locale-provider';
 
 const mocks = vi.hoisted(() => ({ save: vi.fn(), upload: vi.fn(), refresh: vi.fn() }));
 vi.mock('@/actions/profile', () => ({ updateProfile: mocks.save, uploadAvatar: mocks.upload }));
@@ -22,7 +23,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function editName() {
   const user = userEvent.setup();
-  render(<ProfileForm initialProfile={profile} initialAvatarUrl={null} />);
+  render(<LocaleProvider locale={profile.language}><ProfileForm initialProfile={profile} initialAvatarUrl={null} /></LocaleProvider>);
   await user.clear(screen.getByLabelText('Имя'));
   await user.type(screen.getByLabelText('Имя'), 'Новое имя');
   return user;

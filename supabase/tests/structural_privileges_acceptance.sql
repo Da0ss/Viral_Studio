@@ -13,11 +13,11 @@ do $$ declare relation record; role_name text; capability text; checked integer:
         and has_column_privilege(role_name,relation.oid,a.attnum,'REFERENCES')) then raise exception 'Client column REFERENCES remains'; end if;
     end loop;
   end loop;
-  if checked<>11 then raise exception 'Unexpected public table inventory; extend acceptance'; end if;
+  if checked<>12 then raise exception 'Unexpected public table inventory; extend acceptance'; end if;
 end $$;
 set local role authenticated;
 do $$ declare table_name text; begin
-  foreach table_name in array array['profiles','organizations','organization_members','projects','project_members','assets','asset_versions','messages','notifications','generation_jobs','audit_log'] loop
+  foreach table_name in array array['profiles','organizations','organization_members','projects','project_members','assets','asset_versions','messages','notifications','generation_jobs','audit_log','team_invitations'] loop
     begin
       execute format('truncate public.%I cascade',table_name);
       raise exception 'Client TRUNCATE allowed';

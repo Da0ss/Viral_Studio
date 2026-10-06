@@ -24,21 +24,43 @@ can leave metadata without files; process interruption, permission changes,
 concurrent versions and shared paths require a durable deletion outbox and
 reconciliation before production use. Mock tests do not prove hosted deletion.
 
-`POST /api/projects/{projectId}/media` is the multipart upload endpoint (field
-`file`). It rejects absent/cross-origin Origin, authenticates before reading the
-body, requires owner/editor membership, bounds actual streamed bytes to 51 MiB
-including multipart overhead, checks file size/MIME/header, and generates the
-path and creator on the server. It uses the user's Storage client without upsert
-and inserts asset metadata only after upload. A rejected metadata write attempts
-object removal; process crashes, transport-ambiguous writes and failed removal
-still require durable reconciliation. Responses are generic and no-store.
+`POST /api/projects/{projectId}/media` accepts only bounded JSON metadata (at
+most 16 KiB) and a UUID `Idempotency-Key`; file bytes bypass the app server.
+The browser hashes the selected file, then an authenticated RPC atomically
+reserves the key, canonical object path, and 50 MiB quota capacity before a
+server-only route mints and persists a no-upsert signed upload token. The
+browser sends bytes directly to the private bucket using that capability.
+Retries replay the same capability; they do not silently issue a new token.
+Reusing a key for different bytes or metadata is rejected.
 
-The endpoint currently buffers the bounded body; its peak memory is greater
-than one file. Deployment ingress/body and memory limits must be validated.
-Do not assume the bucket's 50 MiB limit means the chosen function host accepts
-50 MiB requests. A production large-file path may require direct resumable
-quarantine uploads and server-side validation/finalization. Rate limits,
-tenant quotas, scan/quarantine and upload UI are not yet implemented.
+`POST /api/projects/{projectId}/media/finalize` accepts only intent/lease IDs.
+It verifies the authenticated owner/editor lease, downloads the fixed reserved
+path through a service-authenticated Storage request with a 60-second deadline
+and 50 MiB streamed read cap, checks exact byte count and SHA-256, then checks a
+short format signature before a service-only fenced RPC creates the asset row.
+The signature is only a mismatch detector—not a malware scan, full decoder, or
+safety verdict. Uncertain finalization remains retryable; the client retains
+its key in session storage and checks status before replaying.
+
+Project media uses a 1 GiB default logical quota covering assets, versions,
+active upload reservations and generation output reservations. Quota
+checks/reservations serialize by project in
+Postgres; only service_role can override a project's cap. `POST
+/api/internal/media-upload-reconcile` is a separate, disabled-by-default worker
+endpoint. It claims an intent only after persisted signed-token expiry plus a
+one-hour grace (or the initial no-token reservation grace), and an expired
+lease. It retires the immutable path, removes its unreferenced object, and
+acknowledges or retries under a token-fenced lease. Configure a separate
+random 32-byte hex `MEDIA_UPLOAD_RECONCILE_SECRET`, set
+`MEDIA_UPLOAD_RECONCILE_ENABLED=true`, and provide an external scheduler before
+expecting abandoned objects to be reclaimed. This remains local until hosted
+Storage transfer/finalization and concurrent acceptance pass.
+
+Upload bytes bypass function ingress; finalization holds at most a 50 MiB
+object plus bounded hashing buffers in server memory. Rate limits,
+resumable/chunked uploads, malware scanning, and content quarantine are not
+implemented. The signed capability expires after two hours; quota reserves
+50 MiB for each live intent until verified finalization or reconciliation.
 
 The media page offers an on-demand download Server Action. It accepts only an
 asset UUID, authenticates with getUser, reads the asset under RLS, checks that
@@ -52,15 +74,17 @@ Seven mocked action cases pass; actual hosted download acceptance is pending.
 `project-media` is private, limited to 50 MiB per object and explicit JPG/PNG/
 WebP, MP4/WebM, MP3/WAV and PDF MIME types. Names follow
 `projects/{projectUUID}/{objectUUID}/{safeFilename}`. The caller must retain both
-project and organization membership. Participants read; owners/editors insert
-and delete. No UPDATE policy exists: uploads must not use upsert, and versions
-need unique object UUIDs. The predicate is SECURITY INVOKER, not a privileged
-authorization bypass. SQL acceptance covers participant/outsider access,
-commenter write denial, malformed/traversal paths, immutable objects, owner
-deletion and organization membership revocation.
+project and organization membership. Participants read and owners/editors
+delete; authenticated clients cannot insert Storage objects directly. The
+same-origin begin route validates membership, fingerprint, and quota before
+issuing a persisted signed capability for one canonical path. No UPDATE policy
+exists: token creation uses `upsert:false`, and
+versions need unique object UUIDs. SQL acceptance covers participant/outsider
+reads, direct-upload denial, malformed/traversal paths, immutable objects,
+owner deletion and organization membership revocation.
 
-This bucket migration is local only. Storage HTTP limits, real upload/download,
-signed URLs, byte inspection, quotas and durable orphan cleanup remain pending.
+This bucket migration is local only. Production acceptance still needs hosted
+Storage HTTP verification, signed URL transfer/finalization and durable cleanup.
 Removing a project or membership can make orphan objects inaccessible to normal
 clients; a scoped trusted cleanup worker is still required. Never delete Storage
 metadata directly in production to remove actual bytes.

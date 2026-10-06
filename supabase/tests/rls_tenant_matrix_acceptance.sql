@@ -8,7 +8,7 @@ begin;
 do $$
 declare
   expected text[] := array[
-    'profiles','organizations','organization_members','projects','project_members',
+    'profiles','organizations','organization_members','projects','project_members','team_invitations',
     'assets','asset_versions','messages','notifications','generation_jobs','audit_log'
   ];
   actual text[];
@@ -52,9 +52,10 @@ insert into public.audit_log(id,organization_id,project_id,actor_id,action,entit
 values ('adadadad-adad-4dad-8dad-adadadadadad','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111',
   'asset.created','asset','abababab-abab-4bab-8bab-abababababab');
-insert into public.generation_jobs(id,project_id,requested_by,input)
+insert into public.generation_jobs(id,project_id,requested_by,input,client_request_id,reservation_day)
 values ('aeaeaeae-aeae-4eae-8eae-aeaeaeaeaeae','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  '11111111-1111-4111-8111-111111111111','{"prompt":"RLS matrix fixture"}');
+  '11111111-1111-4111-8111-111111111111','{"prompt":"RLS matrix fixture"}',
+  'afafafaf-afaf-4faf-8faf-afafafafafaf',(clock_timestamp() at time zone 'UTC')::date);
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}';

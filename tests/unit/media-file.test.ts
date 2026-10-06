@@ -2,6 +2,9 @@ import { expect, it } from 'vitest';
 import { hasMediaSignature, maxMediaBytes, safeMediaFilename, validateMediaMetadata, type MediaMime } from '@/lib/media-file';
 it('enforces exact size boundaries and explicit MIME allowlist', () => {
   expect(validateMediaMetadata(maxMediaBytes, 'video/mp4')).toBeNull();
+  expect(validateMediaMetadata(0, 'video/mp4')).toBe('empty');
+  expect(validateMediaMetadata(maxMediaBytes + 1, 'video/mp4')).toBe('tooLarge');
+  expect(validateMediaMetadata(1, 'text/html')).toBe('unsupportedFormat');
   for (const size of [0, -1, NaN, 1.5, maxMediaBytes + 1]) expect(validateMediaMetadata(size, 'video/mp4')).toBeTruthy();
   for (const mime of ['text/html', 'image/svg+xml', 'image/*', '__proto__', 'video/MP4']) expect(validateMediaMetadata(1, mime)).toBeTruthy();
 });

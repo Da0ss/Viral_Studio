@@ -37,8 +37,9 @@ paths are accepted as return destinations.
 ## API and Server Actions
 
 - `GET /auth/callback`: exchanges an Auth code and validates the internal return path.
-- `POST /api/projects/[projectId]/media`: authenticated owner/editor upload;
-  same-origin, bounded body, file validation, user-scoped Storage and asset insert.
+- `POST /api/projects/[projectId]/media` and `/media/finalize`: authenticated
+  owner/editor upload intent, direct signed browser-to-Storage transfer, bounded
+  service-authenticated hash/signature verification, and fenced finalization.
 - `POST /api/internal/media-cleanup`: separate machine bearer token, disabled by
   default; runs at most one claimed deletion. Exact proxy exception delegates
   authorization to the handler; no other internal path is exempted.

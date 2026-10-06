@@ -1,6 +1,19 @@
 # Production readiness: NOT APPROVED
 
 This is a current worktree inventory, not a deployment certificate. Latest
+root checkpoint on 2026-10-06: 236 full-suite unit/component cases passed.
+All 25 migrations and
+17 SQL acceptance files passed on fresh PGlite. The approved hosted core package
+is deployed, but the new upload/team/generation package is not. A production
+build and full lint passed before subsequent UI fixes; rebuild remains required.
+See [verification-2026-10-06.md](verification-2026-10-06.md).
+
+Supabase follow-up: native SQL, Storage/Realtime and two-session acceptance
+runners and a dedicated CI job are implemented; local start fails because
+Docker/Podman is unavailable. Their behavioral results remain unverified. See
+[supabase-integration.md](supabase-integration.md).
+
+Historical
 evidence: 157 Vitest cases, lint and typecheck pass after project action hardening;
 production compilation last passed before that action change;
 20 embedded SQL migrations and 14 discovered SQL acceptance suites passed on
@@ -15,7 +28,7 @@ checks, not authenticated application acceptance. Hosted CI has not been run.
 | Requirement | Evidence / remaining work |
 | --- | --- |
 | TypeScript / ESLint | Local commands pass |
-| Unit/component tests | 157 mocked/local cases pass; do not prove hosted RLS |
+| Unit/component tests | 236 full-suite cases pass; do not prove hosted RLS |
 | Integration / clean migrations | PGlite SQL passes; full clean Supabase stack pending |
 | Browser E2E | Guest desktop/mobile pass; authorized business flows pending |
 | RLS / permissions | Local tenant/role acceptance passes; hosted migrations and acceptance pending |
@@ -25,12 +38,12 @@ checks, not authenticated application acceptance. Hosted CI has not been run.
 | Profile persistence | Action/component/CAS cases pass; real browser refresh and cross-tab acceptance pending |
 | Project filters | Implementation/unit checks exist; authenticated browser acceptance pending |
 | Chat Realtime | Mock reconnect/dedup cases pass; actual two-user/offline verification pending |
-| Generation jobs | Schema only; provider/model/budget decision and worker/UI/API needed |
+| Generation jobs | HF adapter, durable worker/UI/API and local tests exist; real provider/deployment acceptance pending |
 | Mobile / console / images / overflow | Guest auth pages checked; private rendered surfaces pending |
 | Secrets | Only .env.example tracked; env ignore rules present; client-secret check has limited static-bundle scope; full history/SSR scan pending |
 | Production build | Local compilation passes; no staging/production deployment verified |
 | Safe errors / action auth | Guards and generic errors exist; not a completed exhaustive security audit |
-| Private Storage | avatars + project-media declared private; media migration local only |
+| Private Storage | Hosted avatars + project-media verified private; new upload-intent migration and HTTP acceptance pending |
 | Background jobs | No deployed generation, cleanup or notification-delivery worker |
 
 ## Remaining completion order
