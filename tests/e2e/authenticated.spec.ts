@@ -38,8 +38,9 @@ async function waitForRecoveryLink(email: string, expectedAuthOrigin: string): P
     try {
       const listResponse = await fetch(new URL('/api/v1/messages?start=0&limit=50', mailUrl), { signal: AbortSignal.timeout(3_000) });
       if (listResponse.ok) {
-        const result: { messages?: Array<{ ID?: string; To?: Array<{ Email?: string }> }> } = await listResponse.json();
-        const messages = (result.messages ?? []).filter(message => message.To?.some(recipient => recipient.Email?.toLowerCase() === email.toLowerCase()));
+        const result: { messages?: Array<{ ID?: string; To?: Array<{ Email?: string; Address?: string }> }> } = await listResponse.json();
+        // Mailpit names the recipient field Address; older Inbucket-compatible responses used Email.
+        const messages = (result.messages ?? []).filter(message => message.To?.some(recipient => (recipient.Address ?? recipient.Email)?.toLowerCase() === email.toLowerCase()));
         for (const message of messages) {
           if (!message.ID) continue;
           const detailResponse = await fetch(new URL(`/api/v1/message/${encodeURIComponent(message.ID)}`, mailUrl), { signal: AbortSignal.timeout(3_000) });
@@ -245,14 +246,17 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await expect(profileTab.getByLabel('Имя', { exact: true })).toHaveValue(`Owner ${fixtureId.slice(0, 8)}`);
     await profileTab.close();
     await owner.getByLabel('Язык').selectOption('en');
-    await owner.getByRole('button', { name: 'Сохранить' }).click();
+    // Saving a new language reloads the page; wait for it before opening the menu.
+    await Promise.all([owner.waitForEvent('load'), owner.getByRole('button', { name: 'Сохранить' }).click()]);
+    await expect(owner.locator('html')).toHaveAttribute('lang', 'en');
     await expectNavigationLabel('Projects');
     await owner.reload();
     await expectNavigationLabel('Media library');
     await expect(owner.getByRole('heading', { name: 'PROFILE' })).toBeVisible();
     await owner.getByLabel('Language').selectOption('kk');
-    await owner.getByRole('button', { name: 'Save' }).click();
-    await expect(owner.locator('.profile-form__status')).toContainText('Profile saved.');
+    // Saving a new language reloads the page; wait for it before opening the menu.
+    await Promise.all([owner.waitForEvent('load'), owner.getByRole('button', { name: 'Save' }).click()]);
+    await expect(owner.locator('html')).toHaveAttribute('lang', 'kk');
     const { data: kazakhProfile, error: kazakhProfileError } = await admin!.from('profiles').select('language').eq('email', ownerEmail!).single();
     expect(kazakhProfileError).toBeNull();
     expect(kazakhProfile?.language).toBe('kk');
@@ -260,7 +264,9 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await owner.reload();
     await expectNavigationLabel('Медиа кітапхана');
     await owner.getByLabel('Тіл').selectOption('ru');
-    await owner.getByRole('button', { name: 'Сақтау' }).click();
+    // Saving a new language reloads the page; wait for it before opening the menu.
+    await Promise.all([owner.waitForEvent('load'), owner.getByRole('button', { name: 'Сақтау' }).click()]);
+    await expect(owner.locator('html')).toHaveAttribute('lang', 'ru');
     await expectNavigationLabel('Проекты');
 
     stage('media upload and download');
