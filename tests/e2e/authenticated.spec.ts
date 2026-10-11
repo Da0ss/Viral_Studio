@@ -6,6 +6,21 @@ const serviceKey = process.env.E2E_SUPABASE_SERVICE_ROLE_KEY!;
 const password = process.env.E2E_PASSWORD!;
 const organizationName = process.env.E2E_ORGANIZATION_NAME!;
 const fixtureId = process.env.E2E_FIXTURE_ID!;
+const nativeSupabaseRequired = process.env.E2E_NATIVE_SUPABASE_REQUIRED === '1';
+const requiredNativeFixture = {
+  NEXT_PUBLIC_SUPABASE_URL: url,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  E2E_SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+  E2E_MAIL_URL: process.env.E2E_MAIL_URL,
+  E2E_DESKTOP_OWNER_EMAIL: process.env.E2E_DESKTOP_OWNER_EMAIL,
+  E2E_DESKTOP_VIEWER_EMAIL: process.env.E2E_DESKTOP_VIEWER_EMAIL,
+  E2E_MOBILE_OWNER_EMAIL: process.env.E2E_MOBILE_OWNER_EMAIL,
+  E2E_MOBILE_VIEWER_EMAIL: process.env.E2E_MOBILE_VIEWER_EMAIL,
+  E2E_PASSWORD: password,
+  E2E_ORGANIZATION_NAME: organizationName,
+  E2E_FIXTURE_ID: fixtureId,
+};
+const missingNativeFixture = Object.entries(requiredNativeFixture).filter(([, value]) => !value).map(([name]) => name);
 const admin = url && serviceKey ? createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } }) : null;
 
 async function waitForRecoveryLink(email: string, expectedAuthOrigin: string): Promise<string> {
@@ -53,14 +68,19 @@ async function waitForRecoveryLink(email: string, expectedAuthOrigin: string): P
   throw new Error('The local Supabase recovery email did not arrive with a recovery verification link.');
 }
 
+test.describe('native local Supabase acceptance', () => {
+  test.skip(!nativeSupabaseRequired, 'Run through scripts/test-supabase-e2e.mjs with disposable local Supabase fixtures.');
+  test.beforeAll(() => {
+    if (missingNativeFixture.length) {
+      throw new Error(`Native Supabase acceptance requires fixture variables: ${missingNativeFixture.join(', ')}`);
+    }
+  });
+
 test('two real Auth users create a project, share media/chat, and receive private inbox notifications', async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const fixtureProject = testInfo.project.name === 'mobile-chromium' ? 'mobile' : 'desktop';
   const ownerEmail = process.env[`E2E_${fixtureProject.toUpperCase()}_OWNER_EMAIL`];
   const viewerEmail = process.env[`E2E_${fixtureProject.toUpperCase()}_VIEWER_EMAIL`];
-  test.skip(!url || !serviceKey || !ownerEmail || !viewerEmail || !password || !organizationName || !fixtureId,
-    'Run through scripts/test-supabase-e2e.mjs with disposable local Supabase credentials.');
-
   const device = testInfo.project.use as {
     viewport?: { width: number; height: number } | null;
     screen?: { width: number; height: number };
@@ -260,4 +280,5 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await ownerContext.close();
     await viewerContext.close();
   }
+});
 });

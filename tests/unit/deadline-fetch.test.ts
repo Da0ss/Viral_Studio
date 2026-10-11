@@ -38,6 +38,18 @@ it('passes an already-aborted signal to the transport', async () => {
   await createDeadlineFetch(1000, transport)('https://example.invalid', { signal: controller.signal });
   expect(transport.mock.calls[0][1]!.signal!.aborted).toBe(true);
 });
+it('caps each request at an absolute invocation deadline and refuses late dispatch', async () => {
+  const transport = vi.fn<typeof fetch>((_, init) => new Promise((_, reject) => {
+    init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true });
+  }));
+  const deadlineAt = Date.now() + 20;
+  const fetcher = createDeadlineFetch(60_000, transport, deadlineAt);
+  const assertion = expect(fetcher('https://example.invalid')).rejects.toMatchObject({ name: 'TimeoutError' });
+  await Promise.all([assertion, new Promise(resolve => setTimeout(resolve, 35))]);
+  expect(transport).toHaveBeenCalledOnce();
+  await expect(fetcher('https://example.invalid')).rejects.toMatchObject({ name: 'TimeoutError' });
+  expect(transport).toHaveBeenCalledOnce();
+});
 it('aborts a real local HTTP response that stalls after headers', async () => {
   const server = createServer((_, response) => {
     response.writeHead(200, { 'content-type': 'text/plain' });

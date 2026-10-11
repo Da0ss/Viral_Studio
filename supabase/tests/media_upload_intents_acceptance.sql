@@ -33,7 +33,7 @@ do $$ declare first record; replay record; conflict record; quota record; begin
     insert into public.assets(project_id,kind,name,storage_path,mime_type,size_bytes,created_by)
     values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','image','Premature',first.object_path,'image/png',1,'11111111-1111-4111-8111-111111111111');
     raise exception 'Metadata created before upload verification';
-  exception when check_violation then null; end;
+  exception when insufficient_privilege then null; end;
   if (select outcome from public.get_media_upload_status('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','21212121-2121-4212-8212-212121212121',repeat('a',64)))<>'pending' then raise exception 'Pending upload status missing'; end if;
   begin
     insert into storage.objects(bucket_id,name) values ('project-media',first.object_path);

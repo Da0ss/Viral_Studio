@@ -22,6 +22,8 @@ Checks: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`.
 
 Database setup and pending migrations: [database](docs/database.md).
 Verification scope: [testing](docs/testing.md).
+Backend implementation and deployment handoff: [2026-10-11 checkpoint](docs/backend-implementation-2026-10-11.md).
+Connected Supabase reconciliation and live SQL checks: [database repair journal](docs/database-repair-plan-2026-10-11.md).
 Remaining release blockers: [implementation progress](docs/implementation-progress.md).
 The application is not yet production-ready; authenticated browser, database
 isolation and generation-worker acceptance are still required.

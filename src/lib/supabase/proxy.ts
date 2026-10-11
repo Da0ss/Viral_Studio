@@ -26,7 +26,7 @@ export async function updateSession(request: NextRequest) {
 
   // Machine-to-machine auth is enforced by this exact handler, not user cookies.
   // Never expand this to a prefix covering other internal/API routes.
-  if (pathname === '/api/internal/media-cleanup' || pathname === '/api/internal/media-upload-reconcile') return response;
+  if (pathname === '/api/internal/media-cleanup' || pathname === '/api/internal/media-upload-reconcile' || pathname === '/api/internal/workers' || pathname === '/api/internal/worker-metrics') return response;
 
   if (!hasSupabasePublicConfig()) {
     if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'msg.common.serviceUnavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });

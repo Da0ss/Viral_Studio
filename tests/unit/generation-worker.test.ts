@@ -50,9 +50,12 @@ afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 it('never submits a second time when submit acknowledgement is uncertain', async () => {
   mocks.submit.mockRejectedValue(new Error('private token or transport details'));
-  await expect(runGenerationWorkerBatch(1)).resolves.toMatchObject({ claimed: 1, advanced: 1 });
+  const deadlineAt = Date.now() + 80_000;
+  await expect(runGenerationWorkerBatch(1, deadlineAt)).resolves.toMatchObject({ claimed: 1, advanced: 1 });
+  expect(mocks.admin).toHaveBeenCalledWith({ requestTimeoutMs: 30_000, deadlineAt });
   expect(mocks.rpc).toHaveBeenCalledWith('authorize_generation_dispatch', expect.any(Object));
-  expect(mocks.submit).toHaveBeenCalledTimes(1);
+  expect(mocks.submit).toHaveBeenCalledOnce();
+  expect(mocks.submit).toHaveBeenCalledWith('A slow shot of clouds', deadlineAt);
   expect(mocks.rpc).toHaveBeenCalledWith('mark_generation_uncertain', expect.objectContaining({ error_code: 'temporary' }));
   expect(mocks.rpc).not.toHaveBeenCalledWith('record_generation_submission', expect.anything());
   expect(mocks.rpc).not.toHaveBeenCalledWith('retry_generation_poll', expect.anything());

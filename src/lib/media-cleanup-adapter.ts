@@ -3,8 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { processMediaCleanup, type MediaCleanupPorts } from './media-cleanup-worker';
 
 /** Server invocation only; the machine endpoint requires a separate secret. */
-export async function runOneMediaCleanup() {
-  const client = createAdminClient({ requestTimeoutMs: 20_000 });
+export async function runOneMediaCleanup(deadlineAt?: number) {
+  const client = createAdminClient({ requestTimeoutMs: 20_000, ...(deadlineAt === undefined ? {} : { deadlineAt }) });
   const response = await Promise.resolve(client.rpc('claim_media_cleanup')).catch(() => {
     throw new Error('Cleanup claim failed');
   });
