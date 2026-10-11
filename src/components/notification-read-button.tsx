@@ -7,7 +7,7 @@ export function NotificationReadButton({ id }: { id: string }) {
   const [state, action, pending] = useActionState(markNotificationRead, {});
   return <form action={action}>
     <input type="hidden" name="notificationId" value={id} />
-    <button className="ghost-button" type="submit" disabled={pending || Boolean(state.success)}>{pending ? t('common.saving') : state.success || t('notifications.markRead')}</button>
+    <button className="ghost-button" type="submit" disabled={pending || Boolean(state.success)}>{pending ? t('common.saving') : state.success ? tm(state.success) : t('notifications.markRead')}</button>
     {state.error && <p role="alert">{tm(state.error)}</p>}
     {state.success && <span role="status">{tm(state.success)}</span>}
   </form>;
