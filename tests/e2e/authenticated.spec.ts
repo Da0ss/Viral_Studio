@@ -119,6 +119,30 @@ test('two real Auth users create a project, share media/chat, and receive privat
 
   let bodyFailed = false;
   const stage = (name: string) => console.info(`[auth-e2e] ${testInfo.project.name}: ${name}`);
+  const logDialogGeometry = async (phase: string) => {
+    const geometry = await owner.evaluate(() => {
+      const dialog = document.querySelector<HTMLDialogElement>('dialog.project-modal');
+      if (!dialog) return { dialog: null };
+      const describe = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return { tag: element.tagName, name: element.getAttribute('name'),
+          x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          scrollTop: element.scrollTop, scrollLeft: element.scrollLeft,
+          clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+          clientHeight: element.clientHeight, scrollHeight: element.scrollHeight,
+          position: style.position, transform: style.transform };
+      };
+      const button = dialog.querySelector('button.cta') ?? dialog.querySelector('button');
+      const rect = button?.getBoundingClientRect();
+      return { viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY,
+        visualWidth: visualViewport?.width, visualHeight: visualViewport?.height,
+        visualLeft: visualViewport?.offsetLeft, visualTop: visualViewport?.offsetTop, scale: visualViewport?.scale },
+        dialog: describe(dialog), controls: Array.from(dialog.querySelectorAll('form, label, input, textarea, select, button')).map(describe),
+        hit: rect ? document.elementsFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2).map(element => ({ tag: element.tagName, name: element.getAttribute('name') })) : [] };
+    });
+    console.info(`[auth-e2e-layout] ${testInfo.project.name} ${phase}: ${JSON.stringify(geometry)}`);
+  };
   const expectNavigationLabel = async (name: string) => {
     const mobile = fixtureProject === 'mobile';
     const navigation = owner.locator(mobile ? '#mobile-nav' : '.desktop-nav');
@@ -146,6 +170,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await dialog.getByLabel('Описание').fill(projectDescription);
     await dialog.getByLabel('Тип').selectOption('ai');
     await dialog.getByLabel('Статус').selectOption('active');
+    if (fixtureProject === 'mobile') await logDialogGeometry('before-save');
     await dialog.getByRole('button', { name: 'Сохранить' }).click();
     await expect(dialog.getByRole('status')).toContainText('Проект создан.');
     await dialog.getByRole('button', { name: 'Закрыть' }).click();
@@ -206,7 +231,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await expect(owner.getByRole('status').filter({ hasText: 'Аватар сохранён.' })).toBeVisible();
     const profileTab = await ownerContext.newPage();
     await profileTab.goto('/profile');
-    await expect(profileTab.getByLabel('Аватар')).toBeVisible();
+    await expect(profileTab.getByRole('region', { name: 'Аватар', exact: true }).getByRole('img')).toBeVisible();
     await expect(profileTab.getByLabel('Имя', { exact: true })).toHaveValue(`Owner ${fixtureId.slice(0, 8)}`);
     await profileTab.close();
     await owner.getByLabel('Язык').selectOption('en');
@@ -301,6 +326,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await passwordProbe.auth.signOut();
   } catch (error) {
     bodyFailed = true;
+    if (fixtureProject === 'mobile') await logDialogGeometry('after-failure').catch(() => {});
     throw error;
   } finally {
     const cleanup = await Promise.allSettled([ownerContext.close(), viewerContext.close()]);
