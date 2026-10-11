@@ -275,6 +275,11 @@ test('two real Auth users create a project, share media/chat, and receive privat
         path === `/api/projects/${projectId}/media` && response.status() !== 200
       );
     }), owner.getByRole('button', { name: 'Загрузить материал' }).click()]);
+    if (mediaOutcome.status() !== 201) {
+      const result = await mediaOutcome.json().catch(() => ({}));
+      const errorCode = typeof result.error === 'string' && /^msg\.[A-Za-z0-9.]+$/.test(result.error) ? result.error : 'unknown';
+      console.info(`[auth-e2e-media-error] ${testInfo.project.name}: ${errorCode}`);
+    }
     expect(mediaOutcome.status()).toBe(201);
     await expect(owner.getByRole('status').filter({ hasText: 'Файл успешно загружен.' })).toBeVisible();
     const mediaCard = owner.locator('article').filter({ has: owner.getByRole('heading', { name: mediaName }) });
