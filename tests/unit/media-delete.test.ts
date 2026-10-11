@@ -24,7 +24,7 @@ function setup(role = 'owner', deleted = true, sharedTable = '') {
 beforeEach(() => vi.resetAllMocks());
 it.each(['assets','asset_versions'])('does not remove files referenced by other %s', async table => {
   const client = setup('owner', true, table);
-  expect(await deleteMedia({}, form())).toMatchObject({ error: 'Файл используется другим материалом. Удаление отменено.' });
+  expect(await deleteMedia({}, form())).toMatchObject({ error: 'msg.media.fileInUse' });
   expect(client.deletion).not.toHaveBeenCalled();
 });
 it('requires explicit confirmation before backend access', async () => {
@@ -43,7 +43,7 @@ it('does not report a zero-row database deletion as success', async () => {
 });
 it('deletes asset via atomic DB transaction triggering outbox worker enqueueing', async () => {
   const client = setup('editor');
-  expect(await deleteMedia({}, form())).toMatchObject({ success: 'Материал удалён из списка; файл поставлен в очередь безопасной очистки.' });
+  expect(await deleteMedia({}, form())).toMatchObject({ success: 'msg.media.deleted' });
   expect(client.deleteQuery.eq).toHaveBeenCalledWith('storage_path', path);
   expect(mocks.revalidate).toHaveBeenCalledWith('/media');
 });

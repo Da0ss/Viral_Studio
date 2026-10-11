@@ -8,7 +8,7 @@ import { getAppUrl } from '@/lib/supabase/config';
 import { safeInternalPath } from '@/lib/auth/redirect';
 import type { AuthState } from '@/lib/auth/types';
 
-const configurationMessage = 'Supabase Auth не настроен. Добавьте ключи в .env.local.';
+const configurationMessage = 'msg.auth.notConfigured';
 
 async function getAuthClient() {
   try {
@@ -21,8 +21,8 @@ async function getAuthClient() {
 function credentials(formData: FormData) {
   const email = String(formData.get('email') || '').trim().toLowerCase();
   const password = String(formData.get('password') || '');
-  if (!/^\S+@\S+\.\S+$/.test(email)) return { error: 'Введите корректный email.' };
-  if (password.length < 8) return { error: 'Пароль должен содержать не менее 8 символов.' };
+  if (!/^\S+@\S+\.\S+$/.test(email)) return { error: 'msg.auth.invalidEmail' };
+  if (password.length < 8) return { error: 'msg.auth.passwordTooShort' };
   return { email, password };
 }
 
@@ -37,8 +37,8 @@ export async function login(_: AuthState, formData: FormData): Promise<AuthState
   if (!supabase) return { error: configurationMessage };
   try {
     const { error } = await supabase.auth.signInWithPassword(input);
-    if (error) return { error: 'Email или пароль указаны неверно.' };
-  } catch { return { error: 'Не удалось войти. Проверьте соединение и попробуйте снова.' }; }
+    if (error) return { error: 'msg.auth.invalidCredentials' };
+  } catch { return { error: 'msg.auth.loginNetworkFailed' }; }
   revalidatePath('/', 'layout');
   redirect(nextPath(formData));
 }
@@ -56,36 +56,36 @@ export async function register(_: AuthState, formData: FormData): Promise<AuthSt
       ...input,
       options: { emailRedirectTo: callbackUrl.toString() },
     });
-    if (error) return { error: 'Не удалось зарегистрироваться. Проверьте данные и попробуйте снова.' };
-    if (!data.session) return { success: 'Проверьте почту и подтвердите адрес, чтобы войти.' };
-  } catch { return { error: 'Не удалось зарегистрироваться. Проверьте соединение и попробуйте снова.' }; }
+    if (error) return { error: 'msg.auth.registerFailed' };
+    if (!data.session) return { success: 'msg.auth.confirmEmail' };
+  } catch { return { error: 'msg.auth.registerNetworkFailed' }; }
   revalidatePath('/', 'layout');
   redirect(next);
 }
 
 export async function requestPasswordReset(_: AuthState, formData: FormData): Promise<AuthState> {
   const email = String(formData.get('email') || '').trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) return { error: 'Введите корректный email.' };
+  if (!/^\S+@\S+\.\S+$/.test(email)) return { error: 'msg.auth.invalidEmail' };
   const supabase = await getAuthClient();
   if (!supabase) return { error: configurationMessage };
   try {
     await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${getAppUrl()}/auth/callback?next=/reset-password` });
   } catch { /* Preserve the same non-enumerating response for transport failures. */ }
-  return { success: 'Если аккаунт существует, письмо для восстановления уже отправлено.' };
+  return { success: 'msg.auth.resetSent' };
 }
 
 export async function updatePassword(_: AuthState, formData: FormData): Promise<AuthState> {
   const password = String(formData.get('password') || '');
-  if (password.length < 8) return { error: 'Пароль должен содержать не менее 8 символов.' };
+  if (password.length < 8) return { error: 'msg.auth.passwordTooShort' };
   const supabase = await getAuthClient();
   if (!supabase) return { error: configurationMessage };
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) return { error: 'Сессия закончилась. Откройте ссылку из письма ещё раз.' };
+    if (userError || !user) return { error: 'msg.auth.resetSessionExpired' };
     const { error } = await supabase.auth.updateUser({ password });
-    if (error) return { error: 'Не удалось обновить пароль. Откройте ссылку из письма ещё раз.' };
-    return { success: 'Пароль обновлён. Теперь можно продолжить работу.' };
-  } catch { return { error: 'Не удалось обновить пароль. Проверьте соединение и попробуйте снова.' }; }
+    if (error) return { error: 'msg.auth.passwordFailed' };
+    return { success: 'msg.auth.passwordUpdated' };
+  } catch { return { error: 'msg.auth.passwordNetworkFailed' }; }
 }
 
 export async function logout() {

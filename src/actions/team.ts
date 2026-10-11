@@ -128,16 +128,16 @@ export async function createTeamInvitation(_: TeamActionState, form: FormData): 
     organizationRole: value(form, 'organizationRole'),
     projectRole: value(form, 'projectRole'),
   });
-  if (!parsed.success) return { error: 'Проверьте адрес почты и выбранную роль.' };
+  if (!parsed.success) return { error: 'msg.team.checkInvite' };
   if (parsed.data.projectId && (!parsed.data.projectRole || parsed.data.organizationRole !== 'member')) {
-    return { error: 'Для приглашения в проект выберите роль участника организации и роль проекта.' };
+    return { error: 'msg.team.projectInviteRoles' };
   }
-  if (!parsed.data.projectId && parsed.data.projectRole) return { error: 'Роль проекта доступна только для приглашения в проект.' };
+  if (!parsed.data.projectId && parsed.data.projectRole) return { error: 'msg.team.projectRoleOnlyForProject' };
 
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return { error: 'Войдите снова.' };
+    if (authError || !user) return { error: 'msg.auth.signInAgain' };
 
     const token = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(token).digest('hex');
@@ -151,45 +151,45 @@ export async function createTeamInvitation(_: TeamActionState, form: FormData): 
       invited_by: user.id,
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     });
-    if (error) return { error: 'Не удалось создать приглашение. Проверьте доступ и список текущих приглашений.' };
+    if (error) return { error: 'msg.team.inviteFailed' };
     revalidatePath('/team');
-    return { success: 'Приглашение создано. Передайте ссылку адресату; она действует семь дней и используется один раз.', invitePath: `/team/accept?token=${encodeURIComponent(token)}` };
+    return { success: 'msg.team.inviteCreated', invitePath: `/team/accept?token=${encodeURIComponent(token)}` };
   } catch {
-    return { error: 'Не удалось создать приглашение. Проверьте соединение и попробуйте снова.' };
+    return { error: 'msg.team.inviteNetworkFailed' };
   }
 }
 
 export async function revokeTeamInvitation(_: TeamActionState, form: FormData): Promise<TeamActionState> {
   const invitationId = z.string().uuid().safeParse(value(form, 'invitationId'));
-  if (!invitationId.success) return { error: 'Некорректное приглашение.' };
+  if (!invitationId.success) return { error: 'msg.team.badInvite' };
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return { error: 'Войдите снова.' };
+    if (authError || !user) return { error: 'msg.auth.signInAgain' };
     const { data, error } = await supabase.rpc('revoke_team_invitation', { target_invitation_id: invitationId.data });
-    if (error || data !== true) return { error: 'Не удалось отозвать приглашение. Оно уже использовано или у вас нет прав.' };
+    if (error || data !== true) return { error: 'msg.team.revokeFailed' };
     revalidatePath('/team');
-    return { success: 'Приглашение отозвано.' };
+    return { success: 'msg.team.inviteRevoked' };
   } catch {
-    return { error: 'Не удалось отозвать приглашение. Попробуйте снова.' };
+    return { error: 'msg.team.revokeNetworkFailed' };
   }
 }
 
 export async function acceptTeamInvitation(_: TeamActionState, form: FormData): Promise<TeamActionState> {
   const token = z.string().regex(/^[A-Za-z0-9_-]{43}$/).safeParse(value(form, 'token'));
-  if (!token.success) return { error: 'Ссылка приглашения некорректна.' };
+  if (!token.success) return { error: 'msg.team.badInviteLink' };
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return { error: 'Войдите в аккаунт с подтверждённой почтой, на которую пришло приглашение.' };
+    if (authError || !user) return { error: 'msg.team.acceptSignIn' };
     const tokenHash = createHash('sha256').update(token.data).digest('hex');
     const { data, error } = await supabase.rpc('accept_team_invitation', { target_token_hash: tokenHash });
-    if (error || !data?.length) return { error: 'Приглашение истекло, отозвано или отправлено на другой подтверждённый адрес.' };
+    if (error || !data?.length) return { error: 'msg.team.inviteInvalid' };
     revalidatePath('/', 'layout');
     revalidatePath('/team');
     revalidatePath('/projects');
-    return { success: 'Вы присоединились к команде.' };
+    return { success: 'msg.team.joined' };
   } catch {
-    return { error: 'Не удалось принять приглашение. Проверьте соединение и попробуйте снова.' };
+    return { error: 'msg.team.acceptFailed' };
   }
 }

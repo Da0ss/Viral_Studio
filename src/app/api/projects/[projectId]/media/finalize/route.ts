@@ -39,18 +39,18 @@ async function downloadBounded(path: string): Promise<Uint8Array | null> {
 }
 
 export async function POST(request: Request, context: { params: Promise<{ projectId: string }> }) {
-  if (request.headers.get('origin') !== new URL(request.url).origin) return reply('Запрос запрещён.', 403);
+  if (request.headers.get('origin') !== new URL(request.url).origin) return reply('msg.common.forbidden', 403);
   const project = z.string().uuid().safeParse((await context.params).projectId);
-  if (!project.success || Number(request.headers.get('content-length') ?? 0) > 16 * 1024) return reply('Некорректный запрос.', 400);
+  if (!project.success || Number(request.headers.get('content-length') ?? 0) > 16 * 1024) return reply('msg.common.badRequest', 400);
   try {
     const reader = request.body?.getReader();
-    if (!reader) return reply('Некорректный запрос.', 400);
+    if (!reader) return reply('msg.common.badRequest', 400);
     const chunks: Uint8Array[] = []; let length = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       length += value.byteLength;
-      if (length > 16 * 1024) { await reader.cancel(); return reply('Некорректный запрос.', 400); }
+      if (length > 16 * 1024) { await reader.cancel(); return reply('msg.common.badRequest', 400); }
       chunks.push(value);
     }
     reader.releaseLock();
@@ -58,31 +58,31 @@ export async function POST(request: Request, context: { params: Promise<{ projec
     for (const chunk of chunks) { bodyBytes.set(chunk, offset); offset += chunk.byteLength; }
     const body = JSON.parse(new TextDecoder().decode(bodyBytes));
     const input = z.object({ intentId: z.string().uuid(), leaseToken: z.string().uuid() }).strict().safeParse(body);
-    if (!input.success) return reply('Некорректный запрос.', 400);
+    if (!input.success) return reply('msg.common.badRequest', 400);
     const supabase = await createClient({ requestTimeoutMs: 20_000 });
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return reply('Войдите снова.', 401);
+    if (authError || !user) return reply('msg.auth.signInAgain', 401);
     const { data: allowed, error: leaseError } = await supabase.rpc('assert_media_upload_lease', {
       target_intent: input.data.intentId, token: input.data.leaseToken,
     });
-    if (leaseError || allowed !== true) return reply('Срок этой загрузки истёк.', 410);
+    if (leaseError || allowed !== true) return reply('msg.upload.expired', 410);
     const admin = createAdminClient({ requestTimeoutMs: 60_000 });
     // The worker-facing service RPC constrains the intent/path; do not accept
     // a client-selected path or metadata at finalization time.
     const { data: metadata, error: metadataError } = await admin.rpc('get_media_upload_verification', {
       target_intent: input.data.intentId, token: input.data.leaseToken, target_project: project.data,
     });
-    if (metadataError || !Array.isArray(metadata) || metadata.length !== 1) return reply('Не удалось проверить загрузку.', 502);
+    if (metadataError || !Array.isArray(metadata) || metadata.length !== 1) return reply('msg.upload.checkFailed', 502);
     const intent = metadata[0];
-    if (typeof intent.object_path !== 'string' || typeof intent.mime_type !== 'string' || typeof intent.content_sha256 !== 'string' || !Number.isSafeInteger(Number(intent.size_bytes)) || Number(intent.size_bytes) < 1 || Number(intent.size_bytes) > maxMediaBytes) return reply('Не удалось проверить загрузку.', 502);
+    if (typeof intent.object_path !== 'string' || typeof intent.mime_type !== 'string' || typeof intent.content_sha256 !== 'string' || !Number.isSafeInteger(Number(intent.size_bytes)) || Number(intent.size_bytes) < 1 || Number(intent.size_bytes) > maxMediaBytes) return reply('msg.upload.checkFailed', 502);
     const bytes = await downloadBounded(intent.object_path);
-    if (!bytes || bytes.byteLength !== Number(intent.size_bytes) || bytes.byteLength > maxMediaBytes) return reply('Загруженный файл не совпадает с исходным файлом.', 422);
+    if (!bytes || bytes.byteLength !== Number(intent.size_bytes) || bytes.byteLength > maxMediaBytes) return reply('msg.upload.hashMismatch', 422);
     const hash = createHash('sha256').update(bytes).digest('hex');
-    if (hash !== intent.content_sha256 || !hasMediaSignature(bytes, intent.mime_type as MediaMime)) return reply('Содержимое файла не прошло проверку формата.', 422);
+    if (hash !== intent.content_sha256 || !hasMediaSignature(bytes, intent.mime_type as MediaMime)) return reply('msg.upload.formatCheckFailed', 422);
     const { data: assetId, error: finishError } = await admin.rpc('finish_media_upload', {
       target_intent: input.data.intentId, token: input.data.leaseToken, actual_hash: hash, actual_size: bytes.byteLength,
     });
     if (finishError || typeof assetId !== 'string') return Response.json({ status: 'pending' }, { status: 202, headers: { 'Cache-Control': 'no-store', 'Retry-After': '3' } });
     return Response.json({ id: assetId }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
-  } catch { return reply('Не удалось подтвердить загрузку. Повторите попытку.', 502); }
+  } catch { return reply('msg.upload.confirmFailed', 502); }
 }

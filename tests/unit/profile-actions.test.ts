@@ -35,7 +35,7 @@ describe('profile action persistence boundaries', () => {
     client.storage.remove.mockRejectedValue(new Error('private detail'));
     const form = new FormData();
     form.set('avatar', new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'avatar.png', { type: 'image/png' }));
-    expect(await uploadAvatar(form)).toMatchObject({ status: 'uploaded', warning: expect.stringContaining('повторная очистка пока недоступна') });
+    expect(await uploadAvatar(form)).toMatchObject({ status: 'uploaded', warning: expect.stringContaining('msg.profile.oldAvatarNotDeleted') });
   });
   it('never writes a stale avatar path during ordinary profile save', async () => {
     const client = setup();

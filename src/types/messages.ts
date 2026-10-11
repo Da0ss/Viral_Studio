@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const messageInputSchema = z.object({
   projectId: z.string().uuid(),
-  body: z.string().trim().min(1, 'Сообщение не может быть пустым.').max(4000, 'Сообщение не должно превышать 4000 символов.'),
+  body: z.string().trim().min(1, 'msg.chat.empty').max(4000, 'msg.chat.tooLong'),
 });
 
 export type ChatMessage = {

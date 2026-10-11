@@ -34,7 +34,7 @@ export function Header({ user }: HeaderProps) {
   return (
     <header className="topbar">
       <Link className="brand" href="/create" aria-label="Viral Studio">
-        <b>VIRAL</b><i>/</i><span>Studio</span><em>AI. ЛЮДИ. БОЛЬШЕ<br />ВОЗМОЖНОСТЕЙ.</em>
+        <b>VIRAL</b><i>/</i><span>Studio</span><em>{t('nav.taglineLine1')}<br />{t('nav.taglineLine2')}</em>
       </Link>
       <nav className="desktop-nav" aria-label={t('nav.main')}>
         {navigation.map((item) => <Link key={item.href} className={pathname === item.href ? 'active' : ''} aria-current={pathname === item.href ? 'page' : undefined} href={item.href}>{t(item.key)}</Link>)}
@@ -43,7 +43,7 @@ export function Header({ user }: HeaderProps) {
         <Link className="icon-button" href="/projects" aria-label={t('nav.search')}><i className="icon ph ph-magnifying-glass" /></Link>
         {user && <Link className="icon-button" href={'/notifications' as Route} aria-label={t('nav.notifications')}><i className="icon ph ph-bell" /></Link>}
         <span className="hairline" />
-        {user ? <><Link href="/profile" className="avatar black" aria-label={t('nav.profile')}>{(user.name || user.email)?.charAt(0).toUpperCase() || 'П'}</Link><Link className="person" href="/profile"><b>{user.name || user.email?.split('@')[0] || t('nav.profileLabel')}</b><small>{user.email || t('nav.authorized')}</small></Link><form action={logout}><button className="auth-logout" type="submit">{t('nav.logout')}</button></form></> : <Link className="auth-login" href="/login">{t('nav.login')}</Link>}
+        {user ? <><Link href="/profile" className="avatar black" aria-label={t('nav.profile')}>{(user.name || user.email)?.charAt(0).toUpperCase() || t('nav.profileLabel').charAt(0)}</Link><Link className="person" href="/profile"><b>{user.name || user.email?.split('@')[0] || t('nav.profileLabel')}</b><small>{user.email || t('nav.authorized')}</small></Link><form action={logout}><button className="auth-logout" type="submit">{t('nav.logout')}</button></form></> : <Link className="auth-login" href="/login">{t('nav.login')}</Link>}
         <button ref={menuButton} className="mobile-menu" type="button" onClick={() => setMobileMenuOpen((value) => !value)} aria-label={t(isMobileMenuOpen ? 'nav.closeMenu' : 'nav.openMenu')} aria-expanded={isMobileMenuOpen} aria-controls="mobile-nav"><i className={`icon ph ph-${isMobileMenuOpen ? 'x' : 'list'}`} aria-hidden="true" /></button>
       </div>
       <nav id="mobile-nav" className={`mobile-nav ${isMobileMenuOpen ? 'open' : ''}`} aria-label={t('nav.mobile')}>

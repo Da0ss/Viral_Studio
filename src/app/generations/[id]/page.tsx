@@ -31,6 +31,6 @@ export default async function GenerationPage({ params }: { params: Promise<{ id:
     <p>{project?.name ?? translate(locale, 'generation.project')} · {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(job.created_at))}</p>
     <section className="notification-card"><h2>{translate(locale, 'generation.prompt')}</h2><p>{prompt}</p></section>
     <GenerationStatus jobId={job.id} status={job.status} dispatchState={job.dispatch_state} canCancel={canCancel} />
-    {assetId && <section className="notification-card"><h2>Результат</h2><MediaDownload id={assetId} canDelete={canCancel} /></section>}
+    {assetId && <section className="notification-card"><h2>{translate(locale, 'generation.result')}</h2><MediaDownload id={assetId} canDelete={canCancel} /></section>}
   </main>;
 }

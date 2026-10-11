@@ -10,7 +10,7 @@ export function GenerationForm({ projects, requestId, enabled }: {
   requestId: string;
   enabled: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
   const [state, action, pending] = useActionState(submitGeneration, {});
   if (!enabled) return <p role="status">{t('generation.disabled')}</p>;
   if (state.jobId) return <section role="status"><p>{t('generation.queuedNotice')}</p><Link className="cta" href={`/generations/${state.jobId}`}><span>{t('generation.open')}</span></Link></section>;
@@ -24,7 +24,7 @@ export function GenerationForm({ projects, requestId, enabled }: {
       placeholder={t('generation.promptPlaceholder')} /></label>
     <input type="hidden" name="requestId" value={requestId} />
     <p>{t('generation.costNotice')}</p>
-    {state.error && <p role="alert">{state.error}</p>}
+    {state.error && <p role="alert">{tm(state.error)}</p>}
     <button className="cta" type="submit" disabled={pending}><span>{pending ? t('generation.submitting') : t('generation.submit')}</span></button>
   </form>;
 }

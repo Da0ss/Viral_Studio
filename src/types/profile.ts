@@ -5,15 +5,15 @@ export const timezones = ['Asia/Qyzylorda', 'Asia/Almaty', 'Europe/Moscow', 'Eur
 
 const avatarPath = z.string().trim().max(500).refine(
   (value) => value === '' || (!value.startsWith('/') && !/(^|\/)\.\.($|\/)/.test(value)),
-  'Укажите относительный путь без ../ и начального /.',
+  'msg.profile.relativePath',
 );
 
 export const profileSchema = z.object({
-  name: z.string().trim().min(2, 'Введите имя (не менее 2 символов).').max(80, 'Имя не должно быть длиннее 80 символов.'),
-  email: z.string().trim().toLowerCase().email('Введите корректный email.'),
-  role: z.string().trim().min(2, 'Укажите должность.').max(100, 'Должность не должна быть длиннее 100 символов.'),
-  language: z.enum(languages, { error: 'Выберите язык из списка.' }),
-  timezone: z.enum(timezones, { error: 'Выберите часовой пояс из списка.' }),
+  name: z.string().trim().min(2, 'msg.profile.nameTooShort').max(80, 'msg.profile.nameTooLong'),
+  email: z.string().trim().toLowerCase().email('msg.auth.invalidEmail'),
+  role: z.string().trim().min(2, 'msg.profile.roleRequired').max(100, 'msg.profile.roleTooLong'),
+  language: z.enum(languages, { error: 'msg.profile.languageRequired' }),
+  timezone: z.enum(timezones, { error: 'msg.profile.timezoneRequired' }),
   avatar_path: avatarPath,
   notification_email: z.boolean(),
   notification_browser: z.boolean(),

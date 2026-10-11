@@ -24,28 +24,28 @@ export type AvatarUploadResult =
 
 export async function uploadAvatar(formData: FormData): Promise<AvatarUploadResult> {
   const file = formData.get('avatar');
-  if (!(file instanceof File) || file.size === 0) return { status: 'error', message: 'Выберите изображение.' };
-  if (!avatarMimeTypes.has(file.type)) return { status: 'error', message: 'Поддерживаются только JPG, PNG и WebP.' };
-  if (file.size > maxAvatarBytes) return { status: 'error', message: 'Размер файла не должен превышать 5 МБ.' };
+  if (!(file instanceof File) || file.size === 0) return { status: 'error', message: 'msg.profile.chooseImage' };
+  if (!avatarMimeTypes.has(file.type)) return { status: 'error', message: 'msg.profile.avatarType' };
+  if (file.size > maxAvatarBytes) return { status: 'error', message: 'msg.profile.avatarTooLarge' };
   const fileBytes = new Uint8Array(await file.arrayBuffer());
-  if (!isImageSignature(fileBytes, file.type)) return { status: 'error', message: 'Содержимое файла не соответствует типу изображения.' };
+  if (!isImageSignature(fileBytes, file.type)) return { status: 'error', message: 'msg.profile.imageSignatureMismatch' };
 
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) return { status: 'error', message: 'Сессия закончилась. Войдите снова.' };
+  if (userError || !user) return { status: 'error', message: 'msg.auth.sessionExpired' };
   const { data: profile, error: profileError } = await supabase.from('profiles').select('avatar_path').eq('id', user.id).maybeSingle();
-  if (profileError || !profile) return { status: 'error', message: 'Сначала сохраните основные данные профиля.' };
+  if (profileError || !profile) return { status: 'error', message: 'msg.profile.saveProfileFirst' };
 
   const path = `avatars/${user.id}/${crypto.randomUUID()}-${safeFileStem(file.name)}.${avatarExtension(file.type)}`;
   const { error: uploadError } = await supabase.storage.from('avatars').upload(path, fileBytes, { contentType: file.type, upsert: false });
-  if (uploadError) return { status: 'error', message: 'Не удалось загрузить изображение. Попробуйте ещё раз.' };
+  if (uploadError) return { status: 'error', message: 'msg.profile.avatarUploadFailed' };
 
   let update = supabase.from('profiles').update({ avatar_path: path }).eq('id', user.id);
   update = profile.avatar_path === null ? update.is('avatar_path', null) : update.eq('avatar_path', profile.avatar_path);
   const { data: updated, error: updateError } = await update.select('id').maybeSingle();
   if (updateError || !updated) {
     await supabase.storage.from('avatars').remove([path]);
-    return { status: 'error', message: 'Не удалось сохранить аватар. Возможно, профиль изменён в другой вкладке. Обновите страницу и попробуйте снова.' };
+    return { status: 'error', message: 'msg.profile.avatarSaveFailed' };
   }
   // Persistence has succeeded. Preview and cleanup failures must not invite a
   // duplicate upload or leave the form's saved avatar baseline stale.
@@ -55,14 +55,14 @@ export async function uploadAvatar(formData: FormData): Promise<AvatarUploadResu
     const { data: signed, error: signedError } = await supabase.storage.from('avatars').createSignedUrl(path, 60 * 60);
     if (!signedError && signed?.signedUrl) signedUrl = signed.signedUrl;
   } catch { /* Treat transport failure like a missing preview. */ }
-  if (!signedUrl) warnings.push('Аватар сохранён, но предпросмотр недоступен. Перезагрузите страницу.');
+  if (!signedUrl) warnings.push('msg.profile.avatarNoPreview');
   const oldPath = profile.avatar_path;
   if (oldPath && oldPath !== path) {
     try {
       const { error } = await supabase.storage.from('avatars').remove([oldPath]);
-      if (error) warnings.push('Старый файл не удалось удалить. Автоматическая повторная очистка пока недоступна.');
+      if (error) warnings.push('msg.profile.oldAvatarNotDeleted');
     } catch {
-      warnings.push('Старый файл не удалось удалить. Автоматическая повторная очистка пока недоступна.');
+      warnings.push('msg.profile.oldAvatarNotDeleted');
     }
   }
   revalidatePath('/', 'layout');
@@ -73,18 +73,18 @@ export async function uploadAvatar(formData: FormData): Promise<AvatarUploadResu
 export async function updateProfile(input: ProfileValues): Promise<ProfileActionResult> {
   const parsed = profileSchema.safeParse(input);
   if (!parsed.success) {
-    return { status: 'error', message: 'Проверьте поля формы.', fieldErrors: parsed.error.flatten().fieldErrors };
+    return { status: 'error', message: 'msg.common.checkForm', fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user?.email) return { status: 'error', message: 'Сессия закончилась. Войдите снова.' };
+  if (userError || !user?.email) return { status: 'error', message: 'msg.auth.sessionExpired' };
 
   const values = parsed.data;
   let emailChangePending = false;
   if (values.email !== user.email.toLowerCase()) {
     const { error } = await supabase.auth.updateUser({ email: values.email });
-    if (error) return { status: 'error', message: 'Не удалось обновить email. Проверьте адрес и попробуйте снова.' };
+    if (error) return { status: 'error', message: 'msg.profile.emailFailed' };
     emailChangePending = true;
   }
 
@@ -99,7 +99,7 @@ export async function updateProfile(input: ProfileValues): Promise<ProfileAction
     notification_marketing: values.notification_marketing,
   }).eq('id', user.id).select('id').maybeSingle();
 
-  if (error || !updated) return { status: 'error', message: 'Не удалось сохранить профиль. Попробуйте ещё раз.' };
+  if (error || !updated) return { status: 'error', message: 'msg.profile.saveFailed' };
   revalidatePath('/', 'layout');
   revalidatePath('/profile');
   return { status: 'saved', emailChangePending };

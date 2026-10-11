@@ -14,7 +14,7 @@ const languageLabels: Record<(typeof languages)[number], string> = { ru: 'Рус
 interface ProfileFormProps { initialProfile: ProfileValues; initialAvatarUrl: string | null; }
 
 export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormProps) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
   const router = useRouter();
   const [saveState, setSaveState] = useState<'pristine' | 'dirty' | 'saving' | 'saved' | 'error'>('pristine');
   const [savedProfile, setSavedProfile] = useState(initialProfile);
@@ -66,7 +66,7 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
   const errorMessage = errors.root?.server?.message ?? Object.values(errors).find((error) => error && 'message' in error)?.message;
 
   return <form className="profile-form" noValidate aria-busy={state === 'saving' || avatarUploading} onSubmit={event => { void handleSubmit(onSubmit, onInvalid)(event); }}>
-    <div className="profile-form__status" aria-live="polite">{state === 'dirty' && t('profile.unsaved')}{state === 'saving' && t('profile.saving')}{state === 'saved' && successMessage}{state === 'error' && errorMessage}</div>
+    <div className="profile-form__status" aria-live="polite">{state === 'dirty' && t('profile.unsaved')}{state === 'saving' && t('profile.saving')}{state === 'saved' && successMessage}{state === 'error' && errorMessage && tm(errorMessage)}</div>
     <AvatarUpload initialUrl={avatarUrl} disabled={state === 'saving'} acquireUpload={() => { if (operation.current) return false; operation.current = 'avatar'; setAvatarUploading(true); return true; }} releaseUpload={() => { operation.current = null; setAvatarUploading(false); }} onUploaded={(avatarPath, signedUrl) => { setSavedProfile((previous) => ({ ...previous, avatar_path: avatarPath })); setAvatarUrl(signedUrl); form.resetField('avatar_path', { defaultValue: avatarPath }); }} />
     <fieldset className="profile-grid profile-fields" disabled={state === 'saving'}>
       <Field label={t('profile.name')} error={errors.name?.message}><input {...register('name')} autoComplete="name" /></Field>
@@ -82,4 +82,4 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
   </form>;
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) { return <label className="profile-field"><span>{label}</span>{children}{error && <small role="alert">{error}</small>}</label>; }
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) { const { tm } = useI18n(); return <label className="profile-field"><span>{label}</span>{children}{error && <small role="alert">{tm(error)}</small>}</label>; }

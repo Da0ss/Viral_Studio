@@ -125,7 +125,7 @@ function ProjectMemberControls({ projectId, member, onChange }: { projectId: str
 }
 
 function InviteForm({ organizationId, organizationRole, projects }: { organizationId: string; organizationRole: 'owner' | 'admin' | 'member'; projects: ProjectOption[] }) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
   const [state, action, pending] = useActionState(createTeamInvitation, {});
   const [projectId, setProjectId] = useState('');
   const [copied, setCopied] = useState(false);
@@ -136,29 +136,29 @@ function InviteForm({ organizationId, organizationRole, projects }: { organizati
     <label>{t('team.accessLabel')}<select name="organizationRole" disabled={pending || Boolean(state.invitePath) || Boolean(projectId)} defaultValue="member"><option value="member">{t('team.orgMember')}</option>{organizationRole === 'owner' && <option value="admin">{t('team.orgAdmin')}</option>}</select></label>
     <label>{t('team.projectOptional')}<select name="projectId" value={projectId} disabled={pending || Boolean(state.invitePath)} onChange={(event) => setProjectId(event.currentTarget.value)}><option value="">{t('team.wholeOrg')}</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
     {projectId && <label>{t('team.project')}<select name="projectRole" defaultValue="viewer" disabled={pending || Boolean(state.invitePath)}><option value="viewer">{t('team.projectViewer')}</option><option value="commenter">{t('team.projectCommenter')}</option><option value="editor">{t('team.projectEditor')}</option></select></label>}
-    {state.error && <p role="alert">{state.error}</p>}
-    {state.success && <p role="status">{state.success}</p>}
+    {state.error && <p role="alert">{tm(state.error)}</p>}
+    {state.success && <p role="status">{tm(state.success)}</p>}
     {state.invitePath ? <div className="team-invite-link"><input aria-label={t('team.invitationLink')} readOnly value={invitationUrl} onFocus={(event) => event.currentTarget.select()} /><button type="button" className="ghost-button" onClick={() => { void navigator.clipboard.writeText(invitationUrl).then(() => setCopied(true)).catch(() => setCopied(false)); }}>{copied ? t('team.copied') : t('team.copyLink')}</button></div> : <button className="cta" disabled={pending}><span>{pending ? t('team.creating') : t('team.createInvite')}</span></button>}
   </form>;
 }
 
 function Invitation({ invite }: { invite: PendingInvitation }) {
-  const { locale, t } = useI18n();
+  const { locale, t, tm } = useI18n();
   const [state, action, pending] = useActionState(revokeTeamInvitation, {});
   const projectRole = invite.project_role ? t(`team.projectRole.${invite.project_role}` as 'team.projectRole.owner' | 'team.projectRole.editor' | 'team.projectRole.commenter' | 'team.projectRole.viewer') : null;
   return <article className="team-invitation"><div><strong>{invite.email}</strong><small>{invite.projectName ? `${invite.projectName} · ${projectRole}` : invite.organization_role === 'admin' ? t('team.orgAdmin') : t('team.orgMember')} · {t('team.validUntil',{date:new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(invite.expires_at))})}</small></div>
-    <form action={action}><input type="hidden" name="invitationId" value={invite.id} /><button className="text-button danger" disabled={pending}>{pending ? t('team.revoking') : t('team.revoke')}</button>{state.error && <small role="alert">{state.error}</small>}{state.success && <small role="status">{state.success}</small>}</form>
+    <form action={action}><input type="hidden" name="invitationId" value={invite.id} /><button className="text-button danger" disabled={pending}>{pending ? t('team.revoking') : t('team.revoke')}</button>{state.error && <small role="alert">{tm(state.error)}</small>}{state.success && <small role="status">{tm(state.success)}</small>}</form>
   </article>;
 }
 
 export function AcceptTeamInvitation({ token }: { token: string }) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
   const [state, action, pending] = useActionState(acceptTeamInvitation, {});
   return <form className="team-accept-card" action={action}>
     <input type="hidden" name="token" value={token} />
     <small>{t('team.inviteTitle')}</small><h1>{t('team.join')}</h1>
     <p>{t('team.joinHelp')}</p>
-    {state.error && <p role="alert">{state.error}</p>}{state.success && <p role="status">{state.success}</p>}
+    {state.error && <p role="alert">{tm(state.error)}</p>}{state.success && <p role="status">{tm(state.success)}</p>}
     {state.success ? <a className="cta" href="/team"><span>{t('team.openTeam')}</span></a> : <button className="cta" disabled={pending}><span>{pending ? t('team.checking') : t('team.acceptInvite')}</span></button>}
   </form>;
 }

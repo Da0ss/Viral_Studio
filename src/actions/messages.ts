@@ -13,12 +13,12 @@ const writableRoles = new Set(['owner', 'editor', 'commenter']);
 
 export async function sendMessage(input: { projectId: string; body: string }): Promise<SendMessageResult> {
   const parsed = messageInputSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Проверьте текст сообщения.' };
-  if (!hasSupabasePublicConfig()) return { ok: false, error: 'Чат недоступен: Supabase не настроен.' };
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'msg.chat.checkText' };
+  if (!hasSupabasePublicConfig()) return { ok: false, error: 'msg.chat.notConfigured' };
 
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) return { ok: false, error: 'Сессия закончилась. Войдите снова.' };
+  if (userError || !user) return { ok: false, error: 'msg.auth.sessionExpired' };
 
   // This check gives a clear application error; RLS remains the authority that
   // prevents a forged Server Action request from inserting a row.
@@ -29,7 +29,7 @@ export async function sendMessage(input: { projectId: string; body: string }): P
     .eq('user_id', user.id)
     .maybeSingle();
   if (membershipError || !membership || !writableRoles.has(membership.role)) {
-    return { ok: false, error: 'У вас нет права отправлять сообщения в этот проект.' };
+    return { ok: false, error: 'msg.chat.noWriteAccess' };
   }
 
   const { data, error } = await supabase
@@ -37,7 +37,7 @@ export async function sendMessage(input: { projectId: string; body: string }): P
     .insert({ project_id: parsed.data.projectId, sender_id: user.id, body: parsed.data.body })
     .select('id, project_id, sender_id, body, created_at')
     .single();
-  if (error || !data) return { ok: false, error: 'Не удалось отправить сообщение. Попробуйте ещё раз.' };
+  if (error || !data) return { ok: false, error: 'msg.chat.sendFailed' };
 
   revalidatePath(`/projects/${parsed.data.projectId}/chat`);
   return { ok: true, message: data as ChatMessage };
