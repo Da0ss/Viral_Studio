@@ -110,8 +110,8 @@ async function main() {
     for (const role of Object.keys(fixture)) {
       const email = `browser-${role}-${suiteId}@example.invalid`;
       const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
-      if (error || !data.user) throw new Error(`Could not create the temporary ${role} Auth identity.`);
-      fixture[role] = { id: data.user.id, email };
+      if (error || !data.user?.email) throw new Error(`Could not create the temporary ${role} Auth identity.`);
+      fixture[role] = { id: data.user.id, email: data.user.email };
     }
 
     const env = {
@@ -125,8 +125,10 @@ async function main() {
       E2E_MAIL_URL: 'http://127.0.0.1:54324',
       E2E_DESKTOP_OWNER_EMAIL: fixture.desktopOwner.email,
       E2E_DESKTOP_VIEWER_EMAIL: fixture.desktopViewer.email,
+      E2E_DESKTOP_VIEWER_ID: fixture.desktopViewer.id,
       E2E_MOBILE_OWNER_EMAIL: fixture.mobileOwner.email,
       E2E_MOBILE_VIEWER_EMAIL: fixture.mobileViewer.email,
+      E2E_MOBILE_VIEWER_ID: fixture.mobileViewer.id,
       E2E_PASSWORD: password,
       E2E_ORGANIZATION_NAME: organizationName,
       E2E_FIXTURE_ID: suiteId,

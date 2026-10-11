@@ -14,8 +14,10 @@ const requiredNativeFixture = {
   E2E_MAIL_URL: process.env.E2E_MAIL_URL,
   E2E_DESKTOP_OWNER_EMAIL: process.env.E2E_DESKTOP_OWNER_EMAIL,
   E2E_DESKTOP_VIEWER_EMAIL: process.env.E2E_DESKTOP_VIEWER_EMAIL,
+  E2E_DESKTOP_VIEWER_ID: process.env.E2E_DESKTOP_VIEWER_ID,
   E2E_MOBILE_OWNER_EMAIL: process.env.E2E_MOBILE_OWNER_EMAIL,
   E2E_MOBILE_VIEWER_EMAIL: process.env.E2E_MOBILE_VIEWER_EMAIL,
+  E2E_MOBILE_VIEWER_ID: process.env.E2E_MOBILE_VIEWER_ID,
   E2E_PASSWORD: password,
   E2E_ORGANIZATION_NAME: organizationName,
   E2E_FIXTURE_ID: fixtureId,
@@ -81,6 +83,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
   const fixtureProject = testInfo.project.name === 'mobile-chromium' ? 'mobile' : 'desktop';
   const ownerEmail = process.env[`E2E_${fixtureProject.toUpperCase()}_OWNER_EMAIL`];
   const viewerEmail = process.env[`E2E_${fixtureProject.toUpperCase()}_VIEWER_EMAIL`];
+  const viewerId = process.env[`E2E_${fixtureProject.toUpperCase()}_VIEWER_ID`];
   const device = testInfo.project.use as {
     viewport?: { width: number; height: number } | null;
     screen?: { width: number; height: number };
@@ -139,9 +142,6 @@ test('two real Auth users create a project, share media/chat, and receive privat
     expect(projectError).toBeNull();
     expect(projectRows).toHaveLength(1);
     const projectId = projectRows![0].id;
-    const { data: viewerUser, error: viewerError } = await admin!.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    expect(viewerError).toBeNull();
-    const viewerId = viewerUser.users.find(user => user.email === viewerEmail)?.id;
     expect(viewerId).toBeTruthy();
     await owner.goto('/team');
     const inviteForm = owner.locator('.team-invite-form');
