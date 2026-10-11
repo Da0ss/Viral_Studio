@@ -26,6 +26,26 @@ export async function prepareMediaDownload(_: MediaDownloadState, form: FormData
   }
 }
 
+export type MediaVersion = { id: string; version_number: number; mime_type: string; size_bytes: number; created_at: string };
+// "use server" modules may export only async functions, so the cap stays private.
+const mediaVersionsLimit = 20;
+// Read-only list through the caller's session: asset_versions RLS limits rows to project participants.
+export async function listMediaVersions(assetId: string): Promise<{ versions: MediaVersion[]; hasMore: boolean; error?: string }> {
+  const id = z.string().uuid().safeParse(assetId);
+  if (!id.success) return { versions: [], hasMore: false, error: 'msg.media.badItem' };
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return { versions: [], hasMore: false, error: 'msg.auth.signInAgain' };
+    const { data, error } = await supabase.from('asset_versions').select('id, version_number, mime_type, size_bytes, created_at')
+      .eq('asset_id', id.data).order('version_number', { ascending: false }).limit(mediaVersionsLimit + 1);
+    if (error || !Array.isArray(data)) return { versions: [], hasMore: false, error: 'msg.media.versionsFailed' };
+    return { versions: data.slice(0, mediaVersionsLimit) as MediaVersion[], hasMore: data.length > mediaVersionsLimit };
+  } catch {
+    return { versions: [], hasMore: false, error: 'msg.media.versionsFailed' };
+  }
+}
+
 export async function prepareMediaVersionDownload(_: MediaDownloadState, form: FormData): Promise<MediaDownloadState> {
   const id = z.string().uuid().safeParse(form.get('versionId'));
   if (!id.success) return { error: 'msg.media.badVersion' };

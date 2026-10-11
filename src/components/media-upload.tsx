@@ -9,7 +9,7 @@ const metadataErrors: Record<MediaMetadataError, 'media.emptyFile' | 'media.tooL
   empty: 'media.emptyFile', tooLarge: 'media.tooLarge', unsupportedFormat: 'media.unsupportedFormat',
 };
 
-export function MediaUpload({ projects, versionTarget }: { projects: { id: string; name: string }[]; versionTarget?: { assetId: string; projectId: string } }) {
+export function MediaUpload({ projects, versionTarget, onUploaded }: { projects: { id: string; name: string }[]; versionTarget?: { assetId: string; projectId: string }; onUploaded?: () => void }) {
   const { t } = useI18n();
   const router = useRouter();
   const busy = useRef(false);
@@ -23,7 +23,7 @@ export function MediaUpload({ projects, versionTarget }: { projects: { id: strin
   function completeUpload(form: HTMLFormElement, key: string) {
     clearRetryKey(key); form.reset();
     if (fileInput.current) fileInput.current.value = '';
-    setMessage(t('media.success')); router.refresh();
+    setMessage(t(versionTarget ? 'media.versionSuccess' : 'media.success')); router.refresh(); onUploaded?.();
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -111,12 +111,12 @@ export function MediaUpload({ projects, versionTarget }: { projects: { id: strin
     finally { busy.current = false; setPending(false); }
   }
   if (!versionTarget && !projects.length) return <p>{t('media.noneAvailable')}</p>;
-  return <form className="media-upload" onSubmit={submit} aria-label={t('media.formLabel')} aria-busy={pending}>
-    <fieldset disabled={pending}><legend>{t('media.uploadTitle')}</legend>
+  return <form className="media-upload" onSubmit={submit} aria-label={t(versionTarget ? 'media.addVersion' : 'media.formLabel')} aria-busy={pending}>
+    <fieldset disabled={pending}><legend>{t(versionTarget ? 'media.addVersion' : 'media.uploadTitle')}</legend>
       {versionTarget ? <input type="hidden" name="project" value={versionTarget.projectId} /> : <label>{t('media.projectLabel')}<select name="project" required defaultValue=""><option value="" disabled>{t('media.chooseProject')}</option>{projects.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}
       <label>{t('media.fileLabel')}<input ref={fileInput} type="file" name="file" required accept={Object.keys(mediaFormats).join(',')} /></label>
       <p>{t('media.rules')}</p>
-      <button type="submit" className="media-upload-submit" disabled={pending}>{pending ? t('media.uploadingLabel') : t('media.uploadTitle')}</button>
+      <button type="submit" className="media-upload-submit" disabled={pending}>{pending ? t('media.uploadingLabel') : t(versionTarget ? 'media.addVersion' : 'media.uploadTitle')}</button>
     </fieldset>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
   </form>;

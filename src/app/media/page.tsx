@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getMedia, mediaPageSize, parseMediaPage } from '@/lib/media';
 import { MediaDownload } from '@/components/media-download';
 import { MediaUpload } from '@/components/media-upload';
+import { MediaVersions } from '@/components/media-versions';
 import { getProjects, parseProjectFilters, pageSize as projectPageSize } from '@/lib/projects';
 import { mediaNavigationUrl, singleQueryValue, type MediaSearchParams } from '@/lib/media-navigation';
 import { getCurrentProfile } from '@/lib/profile';
@@ -28,6 +29,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Promis
       <div className="notifications-list">{result.items.map(item => <article className="notification-card" key={item.id}>
         <h2>{item.name}</h2><p>{item.kind} · {item.mime_type} · {new Intl.NumberFormat(locale).format(item.size_bytes)} {t('media.bytes')}</p>
         <MediaDownload id={item.id} canDelete={item.role === 'owner' || item.role === 'editor'} />
+        <MediaVersions assetId={item.id} projectId={item.project_id} canUpload={item.role === 'owner' || item.role === 'editor'} />
       </article>)}</div>
       <nav className="project-pagination" aria-label={t('media.title')}>{page > 1 && <a href={url(page - 1, projectPage)}>{t('common.previous')}</a>}<span>{t('common.page',{page,pages})}</span>{page < pages && <a href={url(page + 1, projectPage)}>{t('common.next')}</a>}</nav>
     </>}
