@@ -14,7 +14,7 @@ const languageLabels: Record<(typeof languages)[number], string> = { ru: 'Рус
 interface ProfileFormProps { initialProfile: ProfileValues; initialAvatarUrl: string | null; }
 
 export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormProps) {
-  const { t, tm } = useI18n();
+  const { t, tm, setLocale } = useI18n();
   const router = useRouter();
   const [saveState, setSaveState] = useState<'pristine' | 'dirty' | 'saving' | 'saved' | 'error'>('pristine');
   const [savedProfile, setSavedProfile] = useState(initialProfile);
@@ -54,6 +54,7 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
     const persisted = { ...values, email: result.emailChangePending ? savedProfile.email : values.email };
     reset(persisted); setSavedProfile(persisted);
     setSuccessMessage(result.emailChangePending ? t('profile.savedConfirmEmail') : t('profile.saved'));
+    setLocale(values.language);
     setSaveState('saved');
     router.refresh();
     } catch {

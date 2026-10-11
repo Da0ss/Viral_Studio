@@ -6,7 +6,7 @@ import { maxMediaBytes, validateMediaMetadata } from '@/lib/media-file';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 const maxBodyBytes = 16 * 1024;
-const reply = (error: string, status: number) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } });
+const reply = (error: string, status: number) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store', 'X-App-Error': error } });
 
 export async function GET(request: Request, context: { params: Promise<{ projectId: string }> }) {
   const project = z.string().uuid().safeParse((await context.params).projectId);

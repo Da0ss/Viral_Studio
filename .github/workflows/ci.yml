@@ -51,6 +51,14 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Authenticated production browser acceptance
         run: pnpm test:e2e:supabase
+      - name: Preserve authenticated browser evidence
+        if: ${{ failure() && !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: authenticated-browser-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Stop disposable Supabase stack
         if: always()
         run: pnpm supabase stop

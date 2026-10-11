@@ -8,7 +8,7 @@ import { hasMediaSignature, maxMediaBytes, type MediaMime } from '@/lib/media-fi
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
-const reply = (error: string, status: number) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } });
+const reply = (error: string, status: number) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store', 'X-App-Error': error } });
 
 async function downloadBounded(path: string): Promise<Uint8Array | null> {
   const { url } = getSupabasePublicConfig();
