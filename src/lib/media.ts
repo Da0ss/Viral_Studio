@@ -26,6 +26,6 @@ export async function getMedia(page: number) {
     const roles = new Map((memberships ?? []).map(member => [member.project_id, member.role]));
     return { authenticated: true, items: (data ?? []).map(item => ({ ...item, role: roles.get(item.project_id) ?? null })) as MediaItem[], total: count ?? 0, error: null };
   } catch {
-    return { authenticated: true, items: [] as MediaItem[], total: 0, error: 'Не удалось загрузить материалы. Обновите страницу.' };
+    return { authenticated: true, items: [] as MediaItem[], total: 0, error: 'msg.media.loadFailed' };
   }
 }

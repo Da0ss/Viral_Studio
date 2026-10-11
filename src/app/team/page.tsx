@@ -28,11 +28,17 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
   const projectNames = new Map((projects.data ?? []).map((project) => [project.id, project.name]));
   const ownedProjectIds = new Set((projectOwnerResult.data ?? []).map((membership) => membership.project_id));
   const manageableProjects = (projectResult.data ?? []).filter((project) => ownedProjectIds.has(project.id));
+  // A failed request must not render as an empty list: pass section errors separately from data.
+  const loadErrors = {
+    roster: managers && Boolean(rosterResult.error),
+    invitations: managers && Boolean(inviteResult.error),
+    projects: Boolean(projectResult.error || projectOwnerResult.error),
+  };
 
   return <main className="page migration-page team-page">
     <small>{t('team.organization')} · {selected.role.toUpperCase()}</small><h1>{t('team.eyebrow')}</h1>
     <p className="subtitle">{t('team.subtitle')}</p>
     {organizations.length > 1 && <nav className="team-org-switcher" aria-label={t('team.organizations')}>{organizations.map((organization) => <a key={organization.id} aria-current={organization.id === selected.id ? 'page' : undefined} href={`/team?organization=${organization.id}`}>{organization.name}</a>)}</nav>}
-    <TeamWorkspace organizationId={selected.id} organizationRole={selected.role} canViewOrganizationTeam={managers} canManageOrganizationTeam={selected.role === 'owner'} projects={projectResult.data ?? []} manageableProjects={manageableProjects} roster={rosterResult.data ?? []} invitations={(inviteResult.data ?? []).map((invite) => ({ ...invite, projectName: invite.project_id ? projectNames.get(invite.project_id) ?? t('team.project') : null }))} />
+    <TeamWorkspace organizationId={selected.id} organizationRole={selected.role} canViewOrganizationTeam={managers} canManageOrganizationTeam={selected.role === 'owner'} projects={projectResult.data ?? []} manageableProjects={manageableProjects} roster={rosterResult.data ?? []} loadErrors={loadErrors} invitations={(inviteResult.data ?? []).map((invite) => ({ ...invite, projectName: invite.project_id ? projectNames.get(invite.project_id) ?? t('team.project') : null }))} />
   </main>;
 }

@@ -11,43 +11,43 @@ async function role(supabase: Awaited<ReturnType<typeof createClient>>, projectI
 function input(form: FormData) { return projectInputSchema.safeParse({ name: val(form, 'name'), description: val(form, 'description'), type: val(form, 'type'), status: val(form, 'status'), organizationId: val(form, 'organizationId') }); }
 export async function createProject(_: State, form: FormData): Promise<State> {
   const parsed = input(form);
-  if (!parsed.success) return { error: 'Проверьте поля проекта.' };
+  if (!parsed.success) return { error: 'msg.projects.checkFields' };
   try {
     const { supabase, user } = await auth();
-    if (!user) return { error: 'Войдите снова.' };
+    if (!user) return { error: 'msg.auth.signInAgain' };
     const { data: membership, error: membershipError } = await supabase.from('organization_members').select('role').eq('organization_id', parsed.data.organizationId).eq('user_id', user.id).maybeSingle();
-    if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) return { error: 'Создавать проекты могут только owner или admin организации.' };
+    if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) return { error: 'msg.projects.createOwnerAdminOnly' };
     const { error } = await supabase.from('projects').insert({ name: parsed.data.name, description: parsed.data.description, type: parsed.data.type, status: parsed.data.status, organization_id: parsed.data.organizationId, created_by: user.id });
-    if (error) return { error: 'Не удалось подтвердить создание проекта. Обновите список перед повтором.' };
-  } catch { return { error: 'Не удалось подтвердить создание проекта. Обновите список перед повтором.' }; }
+    if (error) return { error: 'msg.projects.createUnconfirmed' };
+  } catch { return { error: 'msg.projects.createUnconfirmed' }; }
   revalidatePath('/projects');
-  return { success: 'Проект создан.' };
+  return { success: 'msg.projects.created' };
 }
 export async function updateProject(_: State, form: FormData): Promise<State> {
   const parsed = projectInputSchema.omit({ organizationId: true }).safeParse({ name: val(form, 'name'), description: val(form, 'description'), type: val(form, 'type'), status: val(form, 'status') });
   const projectId = val(form, 'projectId');
-  if (!parsed.success || !projectInputSchema.shape.organizationId.safeParse(projectId).success) return { error: 'Проверьте данные проекта.' };
+  if (!parsed.success || !projectInputSchema.shape.organizationId.safeParse(projectId).success) return { error: 'msg.projects.checkData' };
   try {
     const { supabase, user } = await auth();
-    if (!user || !['owner', 'editor'].includes((await role(supabase, projectId, user.id)) ?? '')) return { error: 'У вас нет прав на изменение проекта.' };
+    if (!user || !['owner', 'editor'].includes((await role(supabase, projectId, user.id)) ?? '')) return { error: 'msg.projects.noEditAccess' };
     // Never accept tenant reassignment from the browser.
     const { data, error } = await supabase.from('projects').update(parsed.data).eq('id', projectId).select('id').maybeSingle();
-    if (error || !data) return { error: 'Не удалось подтвердить обновление проекта. Обновите список.' };
-  } catch { return { error: 'Не удалось подтвердить обновление проекта. Обновите список.' }; }
+    if (error || !data) return { error: 'msg.projects.updateUnconfirmed' };
+  } catch { return { error: 'msg.projects.updateUnconfirmed' }; }
   revalidatePath('/projects');
-  return { success: 'Проект обновлён.' };
+  return { success: 'msg.projects.updated' };
 }
 export async function deleteProject(_: State, form: FormData): Promise<State> {
   const projectId = val(form, 'projectId');
-  if (!projectInputSchema.shape.organizationId.safeParse(projectId).success) return { error: 'Проверьте данные проекта.' };
+  if (!projectInputSchema.shape.organizationId.safeParse(projectId).success) return { error: 'msg.projects.checkData' };
   try {
     const { supabase, user } = await auth();
-    if (!user || await role(supabase, projectId, user.id) !== 'owner') return { error: 'Удалять проект может только owner.' };
+    if (!user || await role(supabase, projectId, user.id) !== 'owner') return { error: 'msg.projects.deleteOwnerOnly' };
     const { data, error } = await supabase.from('projects').delete().eq('id', projectId).select('id').maybeSingle();
-    if (error || !data) return { error: 'Не удалось удалить проект. Обновите список и попробуйте снова.' };
+    if (error || !data) return { error: 'msg.projects.deleteUnconfirmed' };
   } catch {
-    return { error: 'Не удалось удалить проект. Попробуйте снова.' };
+    return { error: 'msg.projects.deleteFailed' };
   }
   revalidatePath('/projects');
-  return { success: 'Проект удалён.' };
+  return { success: 'msg.projects.deleted' };
 }

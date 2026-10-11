@@ -29,7 +29,7 @@ export async function updateSession(request: NextRequest) {
   if (pathname === '/api/internal/media-cleanup' || pathname === '/api/internal/media-upload-reconcile') return response;
 
   if (!hasSupabasePublicConfig()) {
-    if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'Сервис временно недоступен.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'msg.common.serviceUnavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
     if (!isPublicPath(pathname)) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/login';
@@ -62,7 +62,7 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && !isPublicPath(pathname)) {
     if (pathname.startsWith('/api/')) {
-      const denied = NextResponse.json({ error: 'Войдите снова.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
+      const denied = NextResponse.json({ error: 'msg.auth.signInAgain' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
       response.cookies.getAll().forEach(cookie => denied.cookies.set(cookie));
       return denied;
     }

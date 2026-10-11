@@ -1,14 +1,15 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { translate, type Locale, type MessageKey } from '@/lib/i18n/messages';
+import { translate, translateMessage, type Locale, type MessageKey } from '@/lib/i18n/messages';
 
-type LocaleContextValue = { locale: Locale; t: (key: MessageKey, vars?: Record<string, string | number>) => string };
+type LocaleContextValue = { locale: Locale; t: (key: MessageKey, vars?: Record<string, string | number>) => string; tm: (message: string) => string };
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 export function LocaleProvider({ locale, children }: { locale: Locale; children: ReactNode }) {
   const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => translate(locale, key, vars), [locale]);
-  const value = useMemo(() => ({ locale, t }), [locale, t]);
+  const tm = useCallback((message: string) => translateMessage(locale, message), [locale]);
+  const value = useMemo(() => ({ locale, t, tm }), [locale, t, tm]);
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 

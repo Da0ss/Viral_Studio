@@ -41,3 +41,35 @@ it.each([
   expect(screen.getByRole('heading', { name: sectionLabel })).toBeTruthy();
   expect(screen.getAllByRole('button', { name: locale === 'en' ? 'Save role' : locale === 'kk' ? 'Рөлді сақтау' : 'Сохранить роль' })).toHaveLength(2);
 });
+
+describe('section load errors', () => {
+  const base = { organizationId: 'org', organizationRole: 'owner' as const, canViewOrganizationTeam: true, canManageOrganizationTeam: true,
+    projects: [], manageableProjects: [], roster: [], invitations: [] };
+
+  it('shows an error with retry instead of "no pending invitations" when the request failed', () => {
+    render(<LocaleProvider locale="en"><TeamWorkspace {...base} loadErrors={{ invitations: true }} /></LocaleProvider>);
+    expect(screen.getByRole('alert').textContent).toContain('Could not load invitations');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    expect(screen.queryByText('No active invitations.')).toBeNull();
+  });
+
+  it('distinguishes a successful empty roster from a failed roster request', () => {
+    const { unmount } = render(<LocaleProvider locale="en"><TeamWorkspace {...base} /></LocaleProvider>);
+    expect(screen.getByText('There are no members in this organization yet.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    unmount();
+    render(<LocaleProvider locale="en"><TeamWorkspace {...base} loadErrors={{ roster: true }} /></LocaleProvider>);
+    expect(screen.getByRole('alert').textContent).toContain('Could not load the team');
+  });
+
+  it('explains to an admin without owned projects why project management is missing', () => {
+    render(<LocaleProvider locale="en"><TeamWorkspace {...base} organizationRole="admin" canManageOrganizationTeam={false} /></LocaleProvider>);
+    expect(screen.getByText('You do not own any projects with member management.')).toBeTruthy();
+    expect(mocks.roster).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed project request to a member instead of the member-only notice', () => {
+    render(<LocaleProvider locale="en"><TeamWorkspace {...base} organizationRole="member" canViewOrganizationTeam={false} canManageOrganizationTeam={false} loadErrors={{ projects: true }} /></LocaleProvider>);
+    expect(screen.getByRole('alert').textContent).toContain("Could not load the organization's projects.");
+  });
+});

@@ -10,9 +10,9 @@ export type ProjectChatData =
   | { status: 'unauthenticated' | 'forbidden' | 'error'; message: string };
 
 export async function getProjectChat(projectId: string): Promise<ProjectChatData> {
-  if (!hasSupabasePublicConfig()) return { status: 'error', message: 'Supabase не настроен.' };
+  if (!hasSupabasePublicConfig()) return { status: 'error', message: 'msg.common.supabaseNotConfigured' };
   const user = await getCurrentUser();
-  if (!user) return { status: 'unauthenticated', message: 'Войдите, чтобы открыть чат проекта.' };
+  if (!user) return { status: 'unauthenticated', message: 'msg.chat.signIn' };
 
   const supabase = await createClient();
   const { data: membership, error: membershipError } = await supabase
@@ -21,13 +21,13 @@ export async function getProjectChat(projectId: string): Promise<ProjectChatData
     .eq('project_id', projectId)
     .eq('user_id', user.id)
     .maybeSingle();
-  if (membershipError || !membership) return { status: 'forbidden', message: 'У вас нет доступа к чату этого проекта.' };
+  if (membershipError || !membership) return { status: 'forbidden', message: 'msg.chat.noAccess' };
 
   const [{ data: project, error: projectError }, { data: messages, error: messagesError }] = await Promise.all([
     supabase.from('projects').select('name').eq('id', projectId).maybeSingle(),
     supabase.from('messages').select('id, project_id, sender_id, body, created_at').eq('project_id', projectId).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(100),
   ]);
-  if (projectError || messagesError || !project) return { status: 'error', message: 'Не удалось загрузить сообщения. Попробуйте обновить страницу.' };
+  if (projectError || messagesError || !project) return { status: 'error', message: 'msg.chat.loadFailed' };
 
   return { status: 'ready', projectName: project.name, role: membership.role as ProjectRole, userId: user.id, messages: [...(messages ?? [])].reverse() as ChatMessage[] };
 }

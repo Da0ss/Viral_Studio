@@ -6,7 +6,7 @@ test('guest upload receives JSON denial, never an HTML login redirect', async ({
   expect(response.headers()['content-type']).toContain('application/json');
   expect(response.headers()['location']).toBeUndefined();
   expect(response.headers()['cache-control']).toContain('no-store');
-  expect(await response.json()).toEqual({ error: 'Войдите снова.' });
+  expect(await response.json()).toEqual({ error: 'msg.auth.signInAgain' });
 });
 test('foreign-origin guest request is denied without redirect or internal detail', async ({ request }) => {
   const response = await request.post(endpoint, { maxRedirects: 0, headers: { origin: 'https://attacker.invalid' }, multipart: { file: { name: 'clip.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not uploaded') } } });

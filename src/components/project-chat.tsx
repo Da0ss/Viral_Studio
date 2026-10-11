@@ -11,7 +11,7 @@ const maxLength = 4000;
 const sort = (items: ChatMessage[]) => [...items].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
 
 export function ProjectChat({ projectId, currentUserId, canSend, initialMessages }: { projectId: string; currentUserId: string; canSend: boolean; initialMessages: ChatMessage[] }) {
-  const { locale, t } = useI18n();
+  const { locale, t, tm } = useI18n();
   const time = (value: string) => new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
   const [messages, setMessages] = useState(() => sort(initialMessages));
   const [body, setBody] = useState(''); const [pending, setPending] = useState(false); const [error, setError] = useState<string | null>(null);
@@ -110,7 +110,7 @@ export function ProjectChat({ projectId, currentUserId, canSend, initialMessages
     ids.current.add(temporaryId); setMessages((items) => sort([...items, optimistic])); setBody(''); setPending(true); setError(null);
     try {
       const result = await sendMessage({ projectId, body: text });
-      if (!result.ok) { ids.current.delete(temporaryId); setMessages((items) => items.filter((message) => message.id !== temporaryId)); setBody((value) => value || text); setError(result.error); return; }
+      if (!result.ok) { ids.current.delete(temporaryId); setMessages((items) => items.filter((message) => message.id !== temporaryId)); setBody((value) => value || text); setError(tm(result.error)); return; }
       add(result.message, temporaryId); ids.current.delete(temporaryId); if (atBottom.current) window.requestAnimationFrame(latest);
     } catch {
       ids.current.delete(temporaryId); setMessages((items) => items.filter((message) => message.id !== temporaryId)); setBody((value) => value || text); setError(t('chat.sendError'));

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getGenerationProjects, getOrganizations } from '@/lib/projects';
 import { GenerationForm } from '@/components/generation-form';
@@ -11,6 +12,7 @@ export default async function CreatePage() {
   const locale = profile?.language ?? 'ru';
   return <main className="page migration-page create-page"><small>{translate(locale, 'generation.eyebrow')}</small><h1>{translate(locale, 'generation.title')}</h1>
     <p className="subtitle">{translate(locale, 'generation.subtitle')}</p>
+    <p><Link href="/generations">{translate(locale, 'generation.history')}</Link></p>
     <GenerationForm projects={projects} requestId={randomUUID()} enabled={process.env.GENERATION_ENABLED === 'true'} />
   </main>;
 }

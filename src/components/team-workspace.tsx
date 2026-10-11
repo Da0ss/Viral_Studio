@@ -9,7 +9,9 @@ type ProjectOption = { id: string; name: string };
 type TeamMember = { user_id: string; name: string; email: string; role: 'owner' | 'admin' | 'member'; joined_at: string };
 type PendingInvitation = { id: string; email: string; organization_role: 'admin' | 'member'; project_role: 'owner' | 'editor' | 'commenter' | 'viewer' | null; project_id: string | null; expires_at: string; created_at: string; projectName: string | null };
 
-export function TeamWorkspace({ organizationId, organizationRole, projects, roster, invitations, canViewOrganizationTeam, canManageOrganizationTeam, manageableProjects }: {
+type SectionErrors = { roster?: boolean; invitations?: boolean; projects?: boolean };
+
+export function TeamWorkspace({ organizationId, organizationRole, projects, roster, invitations, canViewOrganizationTeam, canManageOrganizationTeam, manageableProjects, loadErrors = {} }: {
   organizationId: string;
   organizationRole: 'owner' | 'admin' | 'member';
   projects: ProjectOption[];
@@ -18,25 +20,35 @@ export function TeamWorkspace({ organizationId, organizationRole, projects, rost
   canViewOrganizationTeam: boolean;
   canManageOrganizationTeam: boolean;
   manageableProjects: ProjectOption[];
+  loadErrors?: SectionErrors;
 }) {
   const { t } = useI18n();
   return <div className="team-workspace">
     {canViewOrganizationTeam && <><section className="team-section"><div><small>{t('team.title')}</small><h2>{t('team.access')}</h2></div>
-      {roster.length ? <div className="team-roster">{roster.map((member) => <article className="team-member" key={member.user_id}>
+      {loadErrors.roster ? <LoadError message={t('team.rosterError')} /> : roster.length ? <div className="team-roster">{roster.map((member) => <article className="team-member" key={member.user_id}>
         <span className="team-avatar" aria-hidden="true">{(member.name || member.email).slice(0, 1).toUpperCase()}</span>
         <div><strong>{member.name || t('team.noName')}</strong><small>{member.email}</small></div>
         <span className={`team-role team-role--${member.role}`}>{t(`team.${member.role}`)}</span>
         {canManageOrganizationTeam && <OrganizationMemberControls organizationId={organizationId} member={member} />}
-      </article>)}</div> : <p>{t('team.rosterError')}</p>}
+      </article>)}</div> : <p>{t('team.rosterEmpty')}</p>}
     </section>
     <section className="team-section"><div><small>{t('team.newInvite')}</small><h2>{t('team.addMember')}</h2></div>
+      {loadErrors.projects && <LoadError message={t('team.projectsError')} />}
       <InviteForm organizationId={organizationId} organizationRole={organizationRole} projects={projects} />
     </section>
     <section className="team-section"><div><small>{t('team.pending')}</small><h2>{t('team.invitations')}</h2></div>
-      {invitations.length ? <div className="team-invitations">{invitations.map((invite) => <Invitation key={invite.id} invite={invite} />)}</div> : <p>{t('team.nonePending')}</p>}
+      {loadErrors.invitations ? <LoadError message={t('team.invitationsError')} /> : invitations.length ? <div className="team-invitations">{invitations.map((invite) => <Invitation key={invite.id} invite={invite} />)}</div> : <p>{t('team.nonePending')}</p>}
     </section></>}
-    {manageableProjects.length > 0 ? <ProjectTeamManagement projects={manageableProjects} /> : !canViewOrganizationTeam && <section className="team-notice"><h2>{t('team.memberRole')}</h2><p>{t('team.memberOnly')}</p></section>}
+    {loadErrors.projects ? !canViewOrganizationTeam && <section className="team-section"><div><small>{t('team.projectAccess')}</small><h2>{t('team.projectMembers')}</h2></div><LoadError message={t('team.projectsError')} /></section>
+      : manageableProjects.length > 0 ? <ProjectTeamManagement projects={manageableProjects} />
+      : canViewOrganizationTeam ? <section className="team-notice"><h2>{t('team.manageRoles')}</h2><p>{t('team.noProjectManagers')}</p><p>{t('team.noProjectManagersHelp')}</p></section>
+      : <section className="team-notice"><h2>{t('team.memberRole')}</h2><p>{t('team.memberOnly')}</p></section>}
   </div>;
+}
+
+function LoadError({ message }: { message: string }) {
+  const { t } = useI18n(); const router = useRouter();
+  return <div className="team-load-error" role="alert"><p>{message}</p><button type="button" className="ghost-button" onClick={() => router.refresh()}>{t('common.retry')}</button></div>;
 }
 
 function MutationFeedback({ error, success }: { error?: string; success?: string }) {
@@ -89,7 +101,7 @@ function ProjectTeamManagement({ projects }: { projects: ProjectOption[] }) {
   return <section className="team-section"><div><small>{t('team.projectAccess')}</small><h2>{t('team.projectMembers')}</h2></div>
     <label>{t('team.chooseProject')}<select value={selectedProjectId} onChange={event => setProjectId(event.currentTarget.value)}>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
     {loading && <p role="status">{t('chat.loading')}</p>}
-    {loadError && <p role="alert">{t('team.projectListError')}</p>}
+    {loadError && <div className="team-load-error" role="alert"><p>{t('team.projectListError')}</p><button type="button" className="ghost-button" onClick={markChanged}>{t('common.retry')}</button></div>}
     {!loading && !loadError && (members.length ? <div className="team-roster">{members.map(member => <article className="team-member" key={`${selectedProjectId}:${member.user_id}`}>
       <span className="team-avatar" aria-hidden="true">{(member.name || member.email).slice(0, 1).toUpperCase()}</span><div><strong>{member.name || t('team.noName')}</strong><small>{member.email}</small></div><span className={`team-role team-role--${member.role}`}>{t(`team.projectRole.${member.role}` as 'team.projectRole.owner' | 'team.projectRole.editor' | 'team.projectRole.commenter' | 'team.projectRole.viewer')}</span>
       <ProjectMemberControls projectId={selectedProjectId} member={member} onChange={markChanged} />
@@ -113,7 +125,7 @@ function ProjectMemberControls({ projectId, member, onChange }: { projectId: str
 }
 
 function InviteForm({ organizationId, organizationRole, projects }: { organizationId: string; organizationRole: 'owner' | 'admin' | 'member'; projects: ProjectOption[] }) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
   const [state, action, pending] = useActionState(createTeamInvitation, {});
   const [projectId, setProjectId] = useState('');
   const [copied, setCopied] = useState(false);
@@ -124,29 +136,29 @@ function InviteForm({ organizationId, organizationRole, projects }: { organizati
     <label>{t('team.accessLabel')}<select name="organizationRole" disabled={pending || Boolean(state.invitePath) || Boolean(projectId)} defaultValue="member"><option value="member">{t('team.orgMember')}</option>{organizationRole === 'owner' && <option value="admin">{t('team.orgAdmin')}</option>}</select></label>
     <label>{t('team.projectOptional')}<select name="projectId" value={projectId} disabled={pending || Boolean(state.invitePath)} onChange={(event) => setProjectId(event.currentTarget.value)}><option value="">{t('team.wholeOrg')}</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
     {projectId && <label>{t('team.project')}<select name="projectRole" defaultValue="viewer" disabled={pending || Boolean(state.invitePath)}><option value="viewer">{t('team.projectViewer')}</option><option value="commenter">{t('team.projectCommenter')}</option><option value="editor">{t('team.projectEditor')}</option></select></label>}
-    {state.error && <p role="alert">{state.error}</p>}
-    {state.success && <p role="status">{state.success}</p>}
+    {state.error && <p role="alert">{tm(state.error)}</p>}
+    {state.success && <p role="status">{tm(state.success)}</p>}
     {state.invitePath ? <div className="team-invite-link"><input aria-label={t('team.invitationLink')} readOnly value={invitationUrl} onFocus={(event) => event.currentTarget.select()} /><button type="button" className="ghost-button" onClick={() => { void navigator.clipboard.writeText(invitationUrl).then(() => setCopied(true)).catch(() => setCopied(false)); }}>{copied ? t('team.copied') : t('team.copyLink')}</button></div> : <button className="cta" disabled={pending}><span>{pending ? t('team.creating') : t('team.createInvite')}</span></button>}
   </form>;
 }
 
 function Invitation({ invite }: { invite: PendingInvitation }) {
-  const { locale, t } = useI18n();
+  const { locale, t, tm } = useI18n();
   const [state, action, pending] = useActionState(revokeTeamInvitation, {});
   const projectRole = invite.project_role ? t(`team.projectRole.${invite.project_role}` as 'team.projectRole.owner' | 'team.projectRole.editor' | 'team.projectRole.commenter' | 'team.projectRole.viewer') : null;
   return <article className="team-invitation"><div><strong>{invite.email}</strong><small>{invite.projectName ? `${invite.projectName} · ${projectRole}` : invite.organization_role === 'admin' ? t('team.orgAdmin') : t('team.orgMember')} · {t('team.validUntil',{date:new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(invite.expires_at))})}</small></div>
-    <form action={action}><input type="hidden" name="invitationId" value={invite.id} /><button className="text-button danger" disabled={pending}>{pending ? t('team.revoking') : t('team.revoke')}</button>{state.error && <small role="alert">{state.error}</small>}{state.success && <small role="status">{state.success}</small>}</form>
+    <form action={action}><input type="hidden" name="invitationId" value={invite.id} /><button className="text-button danger" disabled={pending}>{pending ? t('team.revoking') : t('team.revoke')}</button>{state.error && <small role="alert">{tm(state.error)}</small>}{state.success && <small role="status">{tm(state.success)}</small>}</form>
   </article>;
 }
 
 export function AcceptTeamInvitation({ token }: { token: string }) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
   const [state, action, pending] = useActionState(acceptTeamInvitation, {});
   return <form className="team-accept-card" action={action}>
     <input type="hidden" name="token" value={token} />
     <small>{t('team.inviteTitle')}</small><h1>{t('team.join')}</h1>
     <p>{t('team.joinHelp')}</p>
-    {state.error && <p role="alert">{state.error}</p>}{state.success && <p role="status">{state.success}</p>}
+    {state.error && <p role="alert">{tm(state.error)}</p>}{state.success && <p role="status">{tm(state.success)}</p>}
     {state.success ? <a className="cta" href="/team"><span>{t('team.openTeam')}</span></a> : <button className="cta" disabled={pending}><span>{pending ? t('team.checking') : t('team.acceptInvite')}</span></button>}
   </form>;
 }

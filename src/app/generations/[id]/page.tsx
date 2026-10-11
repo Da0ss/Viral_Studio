@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { GenerationStatus } from '@/components/generation-status';
 import { MediaDownload } from '@/components/media-download';
@@ -27,10 +28,11 @@ export default async function GenerationPage({ params }: { params: Promise<{ id:
   const assetId = typeof output?.asset_id === 'string' ? output.asset_id : null;
   const canCancel = membership.role === 'owner' || membership.role === 'editor';
   return <main className="page migration-page">
+    <p><Link href="/generations">← {translate(locale, 'generation.history')}</Link></p>
     <small>{translate(locale, 'generation.eyebrow')}</small><h1>{translate(locale, 'generation.title')}</h1>
     <p>{project?.name ?? translate(locale, 'generation.project')} · {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(job.created_at))}</p>
     <section className="notification-card"><h2>{translate(locale, 'generation.prompt')}</h2><p>{prompt}</p></section>
     <GenerationStatus jobId={job.id} status={job.status} dispatchState={job.dispatch_state} canCancel={canCancel} />
-    {assetId && <section className="notification-card"><h2>Результат</h2><MediaDownload id={assetId} canDelete={canCancel} /></section>}
+    {assetId && <section className="notification-card"><h2>{translate(locale, 'generation.result')}</h2><MediaDownload id={assetId} canDelete={canCancel} /></section>}
   </main>;
 }

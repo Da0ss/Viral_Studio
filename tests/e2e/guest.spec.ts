@@ -26,7 +26,7 @@ for (const [path, heading] of [
   });
 }
 
-for (const path of ['/create', '/projects', '/profile', '/media', '/team', '/onboarding', '/notifications', '/projects/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/chat']) {
+for (const path of ['/create', '/projects', '/profile', '/media', '/team', '/onboarding', '/notifications', '/generations', '/projects/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/chat']) {
   test(`guest cannot access ${path}`, async ({ page }) => {
     await page.goto(path);
     const url = new URL(page.url());

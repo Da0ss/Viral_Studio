@@ -10,7 +10,7 @@ const acceptedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 interface AvatarUploadProps { initialUrl: string | null; disabled?: boolean; acquireUpload?: () => boolean; releaseUpload?: () => void; onUploaded: (avatarPath: string, signedUrl: string | null) => void; }
 
 export function AvatarUpload({ initialUrl, disabled = false, acquireUpload, releaseUpload, onUploaded }: AvatarUploadProps) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialUrl);
   const [file, setFile] = useState<File | null>(null);
@@ -35,9 +35,9 @@ export function AvatarUpload({ initialUrl, disabled = false, acquireUpload, rele
     const data = new FormData(); data.set('avatar', file);
     try {
     const result = await uploadAvatar(data);
-    if (result.status === 'error') { setMessage(result.message); return; }
+    if (result.status === 'error') { setMessage(tm(result.message)); return; }
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
-    setFile(null); setPreviewUrl(result.signedUrl); onUploaded(result.avatarPath, result.signedUrl); setMessage(result.warning ?? t('avatar.saved'));
+    setFile(null); setPreviewUrl(result.signedUrl); onUploaded(result.avatarPath, result.signedUrl); setMessage(result.warning ? result.warning.split(' ').map(tm).join(' ') : t('avatar.saved'));
     if (inputRef.current) inputRef.current.value = '';
     } catch {
       setMessage(t('avatar.uploadError'));

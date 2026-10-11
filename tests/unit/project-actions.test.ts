@@ -1,3 +1,4 @@
+import { translateMessage } from '@/lib/i18n/messages';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteProject, updateProject, createProject } from '@/actions/projects';
 
@@ -63,7 +64,7 @@ describe('project action authorization and mutation results', () => {
   });
   it('revalidates only an actual owner deletion', async () => {
     const client = setup();
-    expect(await deleteProject({}, form())).toEqual({ success: 'Проект удалён.' });
+    expect(await deleteProject({}, form())).toEqual({ success: 'msg.projects.deleted' });
     expect(client.mutation.eq).toHaveBeenCalledWith('id', projectId);
     expect(client.mutation.select).toHaveBeenCalledWith('id');
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/projects');
@@ -109,10 +110,16 @@ it.each([createProject, updateProject])('returns a safe ambiguous-result message
   if (action === createProject) p.insert.mockRejectedValue(new Error('SQL private stack'));
   else p.mutation.maybeSingle.mockRejectedValue(new Error('SQL private stack'));
   const result = await action({}, form(validInput));
-  expect(result.error).toContain('Обновите список'); expect(JSON.stringify(result)).not.toMatch(/SQL|private|stack/);
+  expect(translateMessage('ru', result.error ?? '')).toContain('Обновите список'); expect(JSON.stringify(result)).not.toMatch(/SQL|private|stack/);
   expect(mocks.revalidatePath).not.toHaveBeenCalled();
 });
 it('rejects malformed update UUID before backend access', async () => {
   expect(await updateProject({}, form({ ...validInput, projectId: '-'.repeat(36) }))).toHaveProperty('error');
   expect(mocks.createClient).not.toHaveBeenCalled();
+});
+
+it('returns a message key that renders in the user language', async () => {
+  const result = await deleteProject({}, new FormData());
+  expect(result.error).toBe('msg.projects.checkData');
+  expect(translateMessage('en', result.error ?? '')).toBe('Check the project details.');
 });
