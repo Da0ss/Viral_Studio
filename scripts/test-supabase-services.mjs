@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TIMEOUT_MS = 10_000;
-const REALTIME_TIMEOUT_MS = 5_000;
+const REALTIME_TIMEOUT_MS = 15_000;
 const REALTIME_DENIAL_WINDOW_MS = 1_500;
 const TEST_PASSWORD = `${randomBytes(32).toString('base64url')}Aa9!`;
 
@@ -117,12 +117,39 @@ function randomEmail(role) {
   return `supabase-acceptance-${role}-${randomUUID()}@example.test`;
 }
 
-async function waitForSubscription(channel, label) {
+async function waitForSubscription(channel, label, diagnostics) {
   return withTimeout(new Promise((resolve, reject) => {
+    let subscribed = false;
+    let replicationReady = false;
+    const finishIfReady = () => {
+      if (subscribed && replicationReady) resolve('SUBSCRIBED');
+    };
+    channel.on('system', {}, (payload) => {
+      if (payload?.extension !== 'postgres_changes') return;
+      const systemStatus = payload?.status;
+      if (systemStatus === 'ok' || systemStatus === 'error') diagnostics.systemStatuses.push(systemStatus);
+      if (systemStatus === 'error') {
+        reject(new AcceptanceError(`${label} Realtime Postgres Changes replication subscription was rejected`));
+        return;
+      }
+      if (systemStatus === 'ok') {
+        replicationReady = true;
+        finishIfReady();
+      }
+    });
     channel.subscribe((status, error) => {
-      if (status === 'SUBSCRIBED') resolve(status);
+      if (/^[A-Z_]{1,24}$/.test(status ?? '')) diagnostics.statuses.push(status);
+      const errorCode = error && typeof error === 'object' && typeof error.code === 'string'
+        && /^[A-Za-z0-9_-]{1,24}$/.test(error.code)
+        ? error.code
+        : undefined;
+      if (errorCode) diagnostics.errorCodes.push(errorCode);
+      if (status === 'SUBSCRIBED') {
+        subscribed = true;
+        finishIfReady();
+      }
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-        reject(new AcceptanceError(`${label} Realtime subscription ended with ${status}`));
+        reject(new AcceptanceError(`${label} Realtime subscription ended with ${status}${errorCode ? ` (error code ${errorCode})` : ''}`));
       }
     });
   }), REALTIME_TIMEOUT_MS, `${label} Realtime subscription`);
@@ -160,19 +187,30 @@ async function run() {
     const outsider = await createUser('outsider');
     step('temporary owner, viewer, and outsider can authenticate');
 
+    const newOrganizationId = randomUUID();
+    organizationId = newOrganizationId;
+    expectSuccess(await owner.client.from('organizations')
+      .insert({ id: newOrganizationId, name: `Service acceptance ${suffix}`, slug: `acceptance-${suffix}`, created_by: owner.id }),
+    'Create temporary organization');
     const organization = expectSuccess(await owner.client.from('organizations')
-      .insert({ name: `Service acceptance ${suffix}`, slug: `acceptance-${suffix}`, created_by: owner.id })
-      .select('id').single(), 'Create temporary organization');
+      .select('id').eq('id', newOrganizationId).single(), 'Read temporary organization after onboarding');
     organizationId = organization.id;
+    const newProjectId = randomUUID();
+    projectId = newProjectId;
+    expectSuccess(await owner.client.from('projects')
+      .insert({ id: newProjectId, organization_id: organizationId, name: `Acceptance ${suffix}`, created_by: owner.id }),
+    'Create temporary project');
     const project = expectSuccess(await owner.client.from('projects')
-      .insert({ organization_id: organizationId, name: `Acceptance ${suffix}`, created_by: owner.id })
-      .select('id').single(), 'Create temporary project');
+      .select('id').eq('id', newProjectId).single(), 'Read temporary project after onboarding');
     projectId = project.id;
 
     expectSuccess(await owner.client.from('organization_members')
       .insert({ organization_id: organizationId, user_id: viewer.id, role: 'member' }), 'Add viewer to temporary organization');
     expectSuccess(await owner.client.from('project_members')
       .insert({ project_id: projectId, user_id: viewer.id, role: 'viewer' }), 'Add viewer to temporary project');
+    expectDenied(await viewer.client.from('messages').insert({
+      project_id: projectId, sender_id: viewer.id, body: `Viewer denial acceptance ${suffix}`,
+    }).select('id').single(), 'Viewer inserts a message without commenter permission');
 
     const inviteToken = randomBytes(32).toString('base64url');
     const inviteHash = createHash('sha256').update(inviteToken).digest('hex');
@@ -308,6 +346,14 @@ async function run() {
     const receivedByOwner = [];
     const receivedByViewer = [];
     const receivedByOutsider = [];
+    const realtimeDiagnostics = {
+      owner: { statuses: [], systemStatuses: [], errorCodes: [] },
+      viewer: { statuses: [], systemStatuses: [], errorCodes: [] },
+      outsider: { statuses: [], systemStatuses: [], errorCodes: [] },
+    };
+    await Promise.all([owner, viewer, outsider].map(async (user) => {
+      await user.client.realtime.setAuth(user.token);
+    }));
     const ownerChannel = owner.client.channel(`acceptance-owner-${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => receivedByOwner.push(payload.new));
     const viewerChannel = viewer.client.channel(`acceptance-viewer-${suffix}`)
@@ -315,10 +361,11 @@ async function run() {
     const outsiderChannel = outsider.client.channel(`acceptance-outsider-${suffix}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => receivedByOutsider.push(payload.new));
     channels.push(ownerChannel, viewerChannel, outsiderChannel);
-    await Promise.all([waitForSubscription(ownerChannel, 'Owner'), waitForSubscription(viewerChannel, 'Viewer'), waitForSubscription(outsiderChannel, 'Outsider')]);
-    expectDenied(await viewer.client.from('messages').insert({
-      project_id: projectId, sender_id: viewer.id, body: `Realtime acceptance ${suffix}`,
-    }).select('id').single(), 'Viewer inserts a message without commenter permission');
+    await Promise.all([
+      waitForSubscription(ownerChannel, 'Owner', realtimeDiagnostics.owner),
+      waitForSubscription(viewerChannel, 'Viewer', realtimeDiagnostics.viewer),
+      waitForSubscription(outsiderChannel, 'Outsider', realtimeDiagnostics.outsider),
+    ]);
     expectSuccess(await owner.client.from('messages').insert({
       project_id: projectId, sender_id: owner.id, body: `Realtime acceptance ${suffix}`,
     }).select('id').single(), 'Owner inserts project message');
@@ -327,7 +374,14 @@ async function run() {
       const started = Date.now();
       const poll = () => {
         if (receivedByOwner.length) return resolve();
-        if (Date.now() - started >= REALTIME_TIMEOUT_MS) return reject(new AcceptanceError('Owner did not receive the project message over Realtime'));
+        if (Date.now() - started >= REALTIME_TIMEOUT_MS) {
+          const ownerStates = realtimeDiagnostics.owner.statuses.join(',') || 'none';
+          const viewerStates = realtimeDiagnostics.viewer.statuses.join(',') || 'none';
+          const outsiderStates = realtimeDiagnostics.outsider.statuses.join(',') || 'none';
+          const ownerReplication = realtimeDiagnostics.owner.systemStatuses.join(',') || 'none';
+          const ownerCodes = realtimeDiagnostics.owner.errorCodes.join(',') || 'none';
+          return reject(new AcceptanceError(`Owner did not receive the project message over Realtime (channel statuses owner=${ownerStates}, viewer=${viewerStates}, outsider=${outsiderStates}; owner replication statuses=${ownerReplication}; owner error codes=${ownerCodes}; event counts owner=${receivedByOwner.length}, viewer=${receivedByViewer.length}, outsider=${receivedByOutsider.length})`));
+        }
         setTimeout(poll, 50);
       };
       poll();
