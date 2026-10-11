@@ -39,6 +39,10 @@
 dialog.project-modal{display:block;inset:0;margin:auto;width:min(calc(100% - 36px),540px);max-height:calc(100dvh - 36px);padding:0;border:0;background:var(--paper);overflow:auto;color:var(--ink)}.project-modal:not([open]){display:none}.project-modal::backdrop{background:#0006}dialog.project-modal form{width:100%;box-sizing:border-box;box-shadow:none;grid-template-columns:minmax(0,1fr)}dialog.project-modal label{grid-template-columns:minmax(0,1fr)}dialog.project-modal :is(input:not([type=hidden]),select,textarea){min-width:0;width:100%;box-sizing:border-box}
 .projects-page .project-filters{grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)) auto}.projects-page .project-filters :is(input,select){min-width:0;width:100%;box-sizing:border-box}@media(max-width:760px){.projects-page .project-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.topbar .account>form{display:none}}
+/* Long organization, project or member names must shrink inside the team page and project cards instead of widening the page. */
+.team-workspace,.team-section{grid-template-columns:minmax(0,1fr)}.team-page :is(select,input){min-width:0;max-width:100%}.team-member__controls,.team-member__controls form,.team-member__controls label{min-width:0;max-width:100%}@media(max-width:620px){.team-member>.team-member__controls{flex:1 1 100%;box-sizing:border-box;padding-left:52px}}
+.project-card{min-width:0;overflow-wrap:anywhere}.project-card footer{flex-wrap:wrap}
+.project-filters.generation-filters :is(input,select){min-width:0;width:100%;box-sizing:border-box}.project-filters.generation-filters{grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr))}
 .profile-fields{margin:0;padding:0;border:0;min-width:0}
 .notifications-list{display:grid;gap:16px;margin-top:24px}.notification-card{border:1px solid var(--line);padding:20px;overflow-wrap:anywhere}.notification-card h2{font-size:24px}.notification-card p{white-space:pre-wrap}.notification-card small{color:var(--muted)}
 .notifications-page h1{font-size:clamp(32px,6vw,84px);overflow-wrap:anywhere}
