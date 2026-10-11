@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/components/locale-provider';
 import { TeamWorkspace } from '@/components/team-workspace';
@@ -12,6 +12,29 @@ vi.mock('@/actions/team', () => ({
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
+
+it('submits member access for a project invitation and restores organization access when deselected', () => {
+  const { container } = render(<LocaleProvider locale="en"><TeamWorkspace organizationId="org" organizationRole="owner"
+    canViewOrganizationTeam canManageOrganizationTeam projects={[{ id: 'project', name: 'Campaign' }]}
+    manageableProjects={[]} roster={[]} invitations={[]} /></LocaleProvider>);
+  const form = container.querySelector<HTMLFormElement>('.team-invite-form')!;
+  const organizationRole = form.elements.namedItem('organizationRole') as HTMLSelectElement;
+  const project = form.elements.namedItem('projectId') as HTMLSelectElement;
+  fireEvent.change(organizationRole, { target: { value: 'admin' } });
+  fireEvent.change(project, { target: { value: 'project' } });
+  const projectRole = form.elements.namedItem('projectRole') as HTMLSelectElement;
+  fireEvent.change(projectRole, { target: { value: 'editor' } });
+  expect(organizationRole.disabled).toBe(true);
+  const projectInvitation = new FormData(form);
+  expect(projectInvitation.getAll('organizationRole')).toEqual(['member']);
+  expect(projectInvitation.get('projectId')).toBe('project');
+  expect(projectInvitation.get('projectRole')).toBe('editor');
+  fireEvent.change(project, { target: { value: '' } });
+  expect(organizationRole.disabled).toBe(false);
+  const organizationInvitation = new FormData(form);
+  expect(organizationInvitation.getAll('organizationRole')).toEqual(['admin']);
+  expect(organizationInvitation.has('projectRole')).toBe(false);
+});
 
 it('shows a safe error and stops loading when the project roster request rejects', async () => {
   mocks.roster.mockRejectedValue(new Error('private database detail'));

@@ -132,6 +132,7 @@ function InviteForm({ organizationId, organizationRole, projects }: { organizati
   const invitationUrl = state.invitePath && typeof window !== 'undefined' ? new URL(state.invitePath, window.location.origin).toString() : '';
   return <form className="team-invite-form" action={action}>
     <input type="hidden" name="organizationId" value={organizationId} />
+    {projectId && <input type="hidden" name="organizationRole" value="member" />}
     <label>{t('team.email')}<input name="email" type="email" autoComplete="email" required maxLength={320} disabled={pending || Boolean(state.invitePath)} /></label>
     <label>{t('team.accessLabel')}<select name="organizationRole" disabled={pending || Boolean(state.invitePath) || Boolean(projectId)} defaultValue="member"><option value="member">{t('team.orgMember')}</option>{organizationRole === 'owner' && <option value="admin">{t('team.orgAdmin')}</option>}</select></label>
     <label>{t('team.projectOptional')}<select name="projectId" value={projectId} disabled={pending || Boolean(state.invitePath)} onChange={(event) => setProjectId(event.currentTarget.value)}><option value="">{t('team.wholeOrg')}</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
