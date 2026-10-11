@@ -20,12 +20,24 @@ function setup() {
   const query = { select: vi.fn(), eq: vi.fn(), order: vi.fn(), or: vi.fn(), limit: result };
   for (const method of ['select', 'eq', 'order', 'or'] as const) query[method].mockReturnValue(query);
   const removeChannel = vi.fn().mockResolvedValue(undefined);
-  mocks.client.mockReturnValue({ channel: vi.fn(() => channel), from: vi.fn(() => query), removeChannel });
-  return { receive: (value: ChatMessage) => receive({ new: value }), status: (value: string) => status(value), result, removeChannel };
+  const setAuth = vi.fn().mockResolvedValue(undefined);
+  const getSession = vi.fn().mockResolvedValue({ data: { session: { access_token: 'user-token' } } });
+  mocks.client.mockReturnValue({ channel: vi.fn(() => channel), from: vi.fn(() => query), removeChannel, auth: { getSession }, realtime: { setAuth } });
+  // The channel joins after the session token is applied, so let that promise chain settle first.
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  return { receive: (value: ChatMessage) => receive({ new: value }), status: async (value: string) => { await settle(); status(value); }, result, removeChannel, setAuth, subscribe: channel.subscribe, settle };
 }
 beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1; }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe('chat realtime reconciliation', () => {
+  it('joins the channel with the signed-in token so RLS lets project messages through', async () => {
+    const realtime = setup();
+    render(<LocaleProvider locale="ru"><ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} /></LocaleProvider>);
+    await act(async () => realtime.settle());
+    expect(realtime.setAuth).toHaveBeenCalledWith('user-token');
+    expect(realtime.setAuth.mock.invocationCallOrder[0]).toBeLessThan(realtime.subscribe.mock.invocationCallOrder[0]);
+  });
+
   it('shows offline immediately and recreates the subscription on network recovery', async () => {
     const realtime = setup();
     const view = render(<LocaleProvider locale="ru"><ProjectChat projectId={projectId} currentUserId="me" canSend initialMessages={[]} /></LocaleProvider>);
