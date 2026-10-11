@@ -55,7 +55,10 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
     reset(persisted); setSavedProfile(persisted);
     setSuccessMessage(result.emailChangePending ? t('profile.savedConfirmEmail') : t('profile.saved'));
     setSaveState('saved');
-    router.refresh();
+    // The language lives in the root layout; a soft refresh can lose the race with in-flight
+    // prefetches and keep the old language, so reload the page when it changes.
+    if (values.language !== savedProfile.language) window.location.reload();
+    else router.refresh();
     } catch {
       setError('root.server', { message: t('profile.saveConnectionError') });
       setSaveState('error');

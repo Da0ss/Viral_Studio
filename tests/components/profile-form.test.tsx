@@ -103,4 +103,15 @@ describe('profile and avatar operation coordination', () => {
     await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
     expect(mocks.refresh).toHaveBeenCalledTimes(1);
   });
+  it('reloads the page after a language change so the whole layout switches language', async () => {
+    mocks.save.mockResolvedValue({ status: 'saved', emailChangePending: false });
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload });
+    const user = userEvent.setup();
+    render(<LocaleProvider locale={profile.language}><ProfileForm initialProfile={profile} initialAvatarUrl={null} /></LocaleProvider>);
+    await user.selectOptions(screen.getByLabelText('Язык'), 'en');
+    await user.click(screen.getByRole('button', { name: 'Сохранить', exact: true }));
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
 });
