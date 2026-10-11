@@ -104,6 +104,10 @@ test('two real Auth users create a project, share media/chat, and receive privat
   };
   const ownerContext = await browser.newContext({ acceptDownloads: true, ...contextOptions });
   const viewerContext = await browser.newContext(contextOptions);
+  ownerContext.setDefaultTimeout(10_000);
+  ownerContext.setDefaultNavigationTimeout(15_000);
+  viewerContext.setDefaultTimeout(10_000);
+  viewerContext.setDefaultNavigationTimeout(15_000);
   const owner = await ownerContext.newPage();
   const viewer = await viewerContext.newPage();
   const projectName = `Browser project ${fixtureId} ${testInfo.project.name}`;
@@ -113,7 +117,20 @@ test('two real Auth users create a project, share media/chat, and receive privat
   const reconnectMessage = `Realtime reconnect fixture ${fixtureId} ${testInfo.project.name}`;
   const projectOrganizationName = `${organizationName} ${testInfo.project.name}`;
 
+  let bodyFailed = false;
+  const stage = (name: string) => console.info(`[auth-e2e] ${testInfo.project.name}: ${name}`);
+  const expectNavigationLabel = async (name: string) => {
+    const mobile = fixtureProject === 'mobile';
+    const navigation = owner.locator(mobile ? '#mobile-nav' : '.desktop-nav');
+    if (mobile) await owner.locator('.mobile-menu').click();
+    await expect(navigation.getByRole('link', { name, exact: true })).toBeVisible();
+    if (mobile) {
+      await owner.keyboard.press('Escape');
+      await expect(owner.locator('.mobile-menu')).toHaveAttribute('aria-expanded', 'false');
+    }
+  };
   try {
+    stage('login, organization, and project creation');
     await owner.goto('/login');
     await owner.getByLabel('Email').fill(ownerEmail);
     await owner.getByLabel('Пароль').fill(password);
@@ -143,6 +160,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     expect(projectRows).toHaveLength(1);
     const projectId = projectRows![0].id;
     expect(viewerId).toBeTruthy();
+    stage('team invitation and acceptance');
     await owner.goto('/team');
     const inviteForm = owner.locator('.team-invite-form');
     await inviteForm.getByLabel('Почта участника').fill(viewerEmail!);
@@ -174,6 +192,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await owner.getByRole('button', { name: 'Применить' }).click();
     await expect(owner.getByRole('heading', { name: 'ПРОЕКТОВ ПОКА НЕТ' })).toBeVisible();
 
+    stage('profile and locale changes');
     await owner.goto('/profile');
     await owner.getByLabel('Имя', { exact: true }).fill(`Owner ${fixtureId.slice(0, 8)}`);
     await owner.getByLabel('Должность').fill('Browser acceptance');
@@ -192,19 +211,20 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await profileTab.close();
     await owner.getByLabel('Язык').selectOption('en');
     await owner.getByRole('button', { name: 'Сохранить' }).click();
-    await expect(owner.getByRole('link', { name: 'Projects' })).toBeVisible();
+    await expectNavigationLabel('Projects');
     await owner.reload();
-    await expect(owner.getByRole('link', { name: 'Media library' })).toBeVisible();
+    await expectNavigationLabel('Media library');
     await expect(owner.getByRole('heading', { name: 'PROFILE' })).toBeVisible();
     await owner.getByLabel('Language').selectOption('kk');
     await owner.getByRole('button', { name: 'Save' }).click();
-    await expect(owner.getByRole('link', { name: 'Жобалар' })).toBeVisible();
+    await expectNavigationLabel('Жобалар');
     await owner.reload();
-    await expect(owner.getByRole('link', { name: 'Медиа кітапхана' })).toBeVisible();
+    await expectNavigationLabel('Медиа кітапхана');
     await owner.getByLabel('Тіл').selectOption('ru');
     await owner.getByRole('button', { name: 'Сақтау' }).click();
-    await expect(owner.getByRole('link', { name: 'Проекты' })).toBeVisible();
+    await expectNavigationLabel('Проекты');
 
+    stage('media upload and download');
     await owner.goto('/media');
     await owner.getByLabel('Проект').selectOption(projectId);
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lWQAAAAASUVORK5CYII=', 'base64');
@@ -223,6 +243,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     const downloadedPath = await download.path();
     expect(downloadedPath).toBeTruthy();
 
+    stage('project chat and reconnect');
     await owner.goto(`/projects/${projectId}/chat`);
     await expect(owner.getByRole('heading', { name: projectName })).toBeVisible();
     await expect(owner.getByText('Онлайн')).toBeVisible({ timeout: 15_000 });
@@ -243,6 +264,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await expect(viewer.getByText('Онлайн')).toBeVisible({ timeout: 15_000 });
     await expect(viewer.getByText(reconnectMessage)).toHaveCount(1, { timeout: 15_000 });
     await expect(viewer.getByText(messageBody)).toHaveCount(1);
+    stage('private inbox notifications');
     await viewer.goto('/notifications');
     const inboxCard = viewer.locator('article').filter({ hasText: 'Новое сообщение в проекте' });
     await expect(inboxCard).toHaveCount(2);
@@ -259,6 +281,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     expect(deletedError).toBeNull();
     expect(deletedRows).toEqual([]);
 
+    stage('media deletion and password recovery');
     await owner.goto('/forgot-password');
     await owner.getByLabel('Email').fill(ownerEmail!);
     await owner.getByRole('button', { name: 'Отправить ссылку' }).click();
@@ -276,9 +299,15 @@ test('two real Auth users create a project, share media/chat, and receive privat
     const signedInWithRecoveryPassword = await passwordProbe.auth.signInWithPassword({ email: ownerEmail!, password: updatedPassword });
     expect(signedInWithRecoveryPassword.error).toBeNull();
     await passwordProbe.auth.signOut();
+  } catch (error) {
+    bodyFailed = true;
+    throw error;
   } finally {
-    await ownerContext.close();
-    await viewerContext.close();
+    const cleanup = await Promise.allSettled([ownerContext.close(), viewerContext.close()]);
+    if (!bodyFailed) {
+      const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Failed to close authenticated E2E browser contexts.');
+    }
   }
 });
 });

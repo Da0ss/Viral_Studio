@@ -118,6 +118,7 @@ async function main() {
       ...process.env,
       CI: 'true',
       GENERATION_ENABLED: 'false',
+      SUPABASE_SERVICE_ROLE_KEY: credentials.serviceRoleKey,
       E2E_NATIVE_SUPABASE_REQUIRED: '1',
       NEXT_PUBLIC_SUPABASE_URL: credentials.url,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: credentials.anonKey,
