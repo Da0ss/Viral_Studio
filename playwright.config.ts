@@ -9,7 +9,7 @@ export default defineConfig({
     { name: 'mobile-chromium', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
   ],
   webServer: {
-    command: 'node node_modules/next/dist/bin/next start -p 3001',
+    command: 'node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3001',
     url: 'http://127.0.0.1:3001/login',
     reuseExistingServer: false,
     timeout: 30_000,
