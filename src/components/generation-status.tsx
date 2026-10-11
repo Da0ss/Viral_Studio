@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { cancelGeneration } from '@/actions/generation';
 import { useI18n } from '@/components/locale-provider';
@@ -48,7 +49,7 @@ export function GenerationStatus({ jobId, status, dispatchState, canCancel }: {
   return <section className="generation-status" aria-live="polite">
     <p><strong>{label}</strong></p>
     {connectionError && isActive && <p role="alert">{t('generation.error')}</p>}
-    {uncertain && <p role="alert">{t('generation.uncertainNotice')}</p>}
+    {uncertain && <div role="alert"><p>{t('generation.uncertainNotice')}</p><p>{t('generation.uncertainHelp')}</p><p><Link href="/generations?status=uncertain">{t('generation.history')}</Link></p></div>}
     {status === 'failed' && <p role="alert">{t('generation.status.unknownError')}</p>}
     {status === 'running' && !uncertain && <p>{t('generation.runningNotice')}</p>}
     {canCancel && isActive && !uncertain && <form action={action}>
