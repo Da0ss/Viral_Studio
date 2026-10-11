@@ -10,17 +10,25 @@ async function role(supabase: Awaited<ReturnType<typeof createClient>>, projectI
 }
 function input(form: FormData) { return projectInputSchema.safeParse({ name: val(form, 'name'), description: val(form, 'description'), type: val(form, 'type'), status: val(form, 'status'), organizationId: val(form, 'organizationId') }); }
 export async function createProject(_: State, form: FormData): Promise<State> {
+  const startedAt = Date.now();
+  const stage = (name: string) => {
+    if (process.env.E2E_NATIVE_SUPABASE_REQUIRED === '1') console.info(`[project-create] ${name}: ${Date.now() - startedAt}ms`);
+  };
   const parsed = input(form);
   if (!parsed.success) return { error: 'msg.projects.checkFields' };
   try {
     const { supabase, user } = await auth();
+    stage('authenticated');
     if (!user) return { error: 'msg.auth.signInAgain' };
     const { data: membership, error: membershipError } = await supabase.from('organization_members').select('role').eq('organization_id', parsed.data.organizationId).eq('user_id', user.id).maybeSingle();
+    stage('membership checked');
     if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) return { error: 'msg.projects.createOwnerAdminOnly' };
     const { error } = await supabase.from('projects').insert({ name: parsed.data.name, description: parsed.data.description, type: parsed.data.type, status: parsed.data.status, organization_id: parsed.data.organizationId, created_by: user.id });
+    stage('insert acknowledged');
     if (error) return { error: 'msg.projects.createUnconfirmed' };
   } catch { return { error: 'msg.projects.createUnconfirmed' }; }
   revalidatePath('/projects');
+  stage('returning confirmed success');
   return { success: 'msg.projects.created' };
 }
 export async function updateProject(_: State, form: FormData): Promise<State> {

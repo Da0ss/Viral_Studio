@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { maxMediaBytes, validateMediaMetadata } from '@/lib/media-file';
+import { hasTrustedOrigin } from '@/lib/request-origin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -31,7 +32,7 @@ export async function GET(request: Request, context: { params: Promise<{ project
 }
 
 export async function POST(request: Request, context: { params: Promise<{ projectId: string }> }) {
-  if (request.headers.get('origin') !== new URL(request.url).origin) return reply('msg.common.forbidden', 403);
+  if (!hasTrustedOrigin(request)) return reply('msg.common.forbidden', 403);
   const project = z.string().uuid().safeParse((await context.params).projectId);
   if (!project.success) return reply('msg.common.badProject', 400);
   const contentType = request.headers.get('content-type') ?? '';

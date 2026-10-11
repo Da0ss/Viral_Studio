@@ -1,21 +1,15 @@
 import { NextResponse } from 'next/server';
 import { advanceGenerationJob } from '@/lib/generation-worker';
 import { createClient } from '@/lib/supabase/server';
+import { hasTrustedOrigin } from '@/lib/request-origin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function sameOrigin(request: Request) {
-  const origin = request.headers.get('origin');
-  if (!origin) return false;
-  try { return new URL(origin).origin === new URL(request.url).origin; }
-  catch { return false; }
-}
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!sameOrigin(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403, headers: { 'Cache-Control': 'private, no-store' } });
+  if (!hasTrustedOrigin(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403, headers: { 'Cache-Control': 'private, no-store' } });
   const { id } = await params;
   if (!uuidPattern.test(id)) return NextResponse.json({ error: 'Not found' }, { status: 404, headers: { 'Cache-Control': 'private, no-store' } });
   try {

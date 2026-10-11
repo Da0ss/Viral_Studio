@@ -131,6 +131,9 @@ test('two real Auth users create a project, share media/chat, and receive privat
       new URL(response.url()).pathname === path && response.request().method() === 'POST' &&
       Boolean(response.request().headers()['next-action'])), click()]);
     expect(response.status()).toBe(200);
+    // Headers arrive before React consumes the action result and the RSC patch.
+    // Wait for the user's actual operation to settle, with a bounded deadline.
+    await expect(owner.locator('form[aria-busy="true"]')).toHaveCount(0, { timeout: 15_000 });
   };
   const logDialogGeometry = async (phase: string) => {
     const geometry = await owner.evaluate(() => {
@@ -290,7 +293,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
       console.info(`[auth-e2e-media-error] ${testInfo.project.name}: ${errorCode}`);
       console.info(`[auth-e2e-media-response] ${testInfo.project.name}: ${JSON.stringify({
         status: mediaOutcome.status(), contentType: mediaOutcome.headers()['content-type'],
-        origin: mediaOutcome.request().headers()['origin'], requestOrigin: new URL(mediaOutcome.url()).origin,
+        origin: (await mediaOutcome.request().allHeaders())['origin'], requestOrigin: new URL(mediaOutcome.url()).origin,
       })}`);
     }
     expect(mediaOutcome.status()).toBe(201);

@@ -6,7 +6,10 @@ import { maxMediaBytes } from '@/lib/media-file';
 const mocks = vi.hoisted(() => ({ client: vi.fn(), admin: vi.fn(), storageFetch: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.client }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.admin }));
-vi.mock('@/lib/supabase/config', () => ({ getSupabasePublicConfig: () => ({ url: 'https://storage.test' }) }));
+vi.mock('@/lib/supabase/config', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/supabase/config')>(),
+  getSupabasePublicConfig: () => ({ url: 'https://storage.test' }),
+}));
 vi.mock('@/lib/deadline-fetch', () => ({ createDeadlineFetch: () => mocks.storageFetch }));
 const project = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const intentId = '12121212-1212-4212-8212-121212121212';
@@ -30,7 +33,7 @@ function request(origin = 'http://localhost') {
     method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ intentId, leaseToken: lease }),
   });
 }
-beforeEach(() => { vi.resetAllMocks(); vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role'); });
+beforeEach(() => { vi.resetAllMocks(); vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role'); vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost'); });
 afterEach(() => vi.unstubAllEnvs());
 
 it('authenticates the caller and verifies the exact stored bytes before finalizing', async () => {

@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getSupabasePublicConfig } from '@/lib/supabase/config';
 import { createDeadlineFetch } from '@/lib/deadline-fetch';
 import { hasMediaSignature, maxMediaBytes, type MediaMime } from '@/lib/media-file';
+import { hasTrustedOrigin } from '@/lib/request-origin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -39,7 +40,7 @@ async function downloadBounded(path: string): Promise<Uint8Array | null> {
 }
 
 export async function POST(request: Request, context: { params: Promise<{ projectId: string }> }) {
-  if (request.headers.get('origin') !== new URL(request.url).origin) return reply('msg.common.forbidden', 403);
+  if (!hasTrustedOrigin(request)) return reply('msg.common.forbidden', 403);
   const project = z.string().uuid().safeParse((await context.params).projectId);
   if (!project.success || Number(request.headers.get('content-length') ?? 0) > 16 * 1024) return reply('msg.common.badRequest', 400);
   try {

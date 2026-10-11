@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ client: vi.fn(), getUser: vi.fn(), lookup: vi.fn(), advance: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.client }));
@@ -14,11 +14,13 @@ const call = (input = request(), target = id) => POST(input, { params: Promise.r
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.test');
   mocks.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
   mocks.lookup.mockResolvedValue({ data: { id, project_id: 'project', status: 'queued' }, error: null });
   mocks.advance.mockResolvedValue(true);
   mocks.client.mockResolvedValue({ auth: { getUser: mocks.getUser }, from: () => ({ select: () => ({ eq: () => ({ maybeSingle: mocks.lookup }) }) }) });
 });
+afterEach(() => vi.unstubAllEnvs());
 
 it.each([null, 'https://attacker.test', 'null', 'invalid'])('rejects origin %s before creating an authenticated client', async (origin) => {
   const response = await call(request(origin));

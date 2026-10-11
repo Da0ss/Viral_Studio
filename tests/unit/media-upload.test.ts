@@ -45,10 +45,11 @@ function setup(options: { outcome?: string; status?: string; beginError?: boolea
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost');
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-06T10:00:00.000Z'));
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 it('requires same-origin requests and a UUID idempotency key', async () => {
   expect((await POST(request('https://attacker.invalid'), context)).status).toBe(403);
