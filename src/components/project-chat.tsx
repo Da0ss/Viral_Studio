@@ -62,17 +62,25 @@ export function ProjectChat({ projectId, currentUserId, canSend, initialMessages
         if (!cancelled) { setConnection('error'); setError(t('chat.syncError')); }
       } finally { syncing = false; }
     }
-    const channel = supabase.channel(`project:${projectId}:messages`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => {
+    const channel = supabase.channel(`project:${projectId}:messages`);
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `project_id=eq.${projectId}` }, (payload) => {
       if (cancelled || offline) return;
       const message = payload.new as ChatMessage; const wasAtBottom = nearBottom();
       if (!add(message)) return;
       if (wasAtBottom) window.requestAnimationFrame(latest); else if (message.sender_id !== currentUserId) setUnread((count) => count + 1);
-    }).subscribe((status) => {
+    });
+    // Realtime applies RLS with the token it joined with; join only after the signed-in session is loaded.
+    void supabase.auth.getSession().then(async ({ data }) => {
       if (cancelled) return;
-      if (offline) { setConnection('disconnected'); return; }
-      if (status === 'SUBSCRIBED') { setConnection('connected'); setError((value) => value ? null : value); void catchUp(); }
-      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { setConnection('error'); setError(t('chat.connectionError')); }
-      else if (status === 'CLOSED') setConnection('disconnected'); else setConnection('connecting');
+      if (data.session) await supabase.realtime.setAuth(data.session.access_token);
+      if (cancelled) return;
+      channel.subscribe((status) => {
+        if (cancelled) return;
+        if (offline) { setConnection('disconnected'); return; }
+        if (status === 'SUBSCRIBED') { setConnection('connected'); setError((value) => value ? null : value); void catchUp(); }
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { setConnection('error'); setError(t('chat.connectionError')); }
+        else if (status === 'CLOSED') setConnection('disconnected'); else setConnection('connecting');
+      });
     });
     return () => { cancelled = true; window.removeEventListener('offline', onOffline); window.removeEventListener('online', onOnline); void supabase.removeChannel(channel); };
   }, [projectId, currentUserId, reconnect, t]);
