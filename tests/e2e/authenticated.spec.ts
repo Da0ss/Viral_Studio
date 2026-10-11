@@ -118,6 +118,13 @@ test('two real Auth users create a project, share media/chat, and receive privat
   const projectOrganizationName = `${organizationName} ${testInfo.project.name}`;
 
   let bodyFailed = false;
+  const mediaResponses: Array<{ endpoint: string; status: number }> = [];
+  owner.on('response', response => {
+    const path = new URL(response.url()).pathname;
+    if (/^\/api\/projects\/[^/]+\/media(?:\/finalize)?$/.test(path)) {
+      mediaResponses.push({ endpoint: path.endsWith('/finalize') ? 'finalize' : 'intent', status: response.status() });
+    }
+  });
   const stage = (name: string) => console.info(`[auth-e2e] ${testInfo.project.name}: ${name}`);
   const logDialogGeometry = async (phase: string) => {
     const geometry = await owner.evaluate(() => {
@@ -261,7 +268,14 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await owner.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(projectId);
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lWQAAAAASUVORK5CYII=', 'base64');
     await owner.getByLabel('Файл материала').setInputFiles({ name: mediaName, mimeType: 'image/png', buffer: png });
-    await owner.getByRole('button', { name: 'Загрузить материал' }).click();
+    const [mediaOutcome] = await Promise.all([owner.waitForResponse(response => {
+      const path = new URL(response.url()).pathname;
+      return response.request().method() === 'POST' && (
+        path === `/api/projects/${projectId}/media/finalize` ||
+        path === `/api/projects/${projectId}/media` && response.status() !== 200
+      );
+    }), owner.getByRole('button', { name: 'Загрузить материал' }).click()]);
+    expect(mediaOutcome.status()).toBe(201);
     await expect(owner.getByRole('status').filter({ hasText: 'Файл успешно загружен.' })).toBeVisible();
     const mediaCard = owner.locator('article').filter({ has: owner.getByRole('heading', { name: mediaName }) });
     await expect(mediaCard).toBeVisible();
@@ -334,6 +348,8 @@ test('two real Auth users create a project, share media/chat, and receive privat
   } catch (error) {
     bodyFailed = true;
     if (fixtureProject === 'mobile') await logDialogGeometry('after-failure').catch(() => {});
+    console.info(`[auth-e2e-media] ${testInfo.project.name}: ${JSON.stringify({ responses: mediaResponses,
+      feedback: await owner.locator('.media-upload [role="alert"], .media-upload [role="status"]').allTextContents().catch(() => []) })}`);
     throw error;
   } finally {
     const cleanup = await Promise.allSettled([ownerContext.close(), viewerContext.close()]);
