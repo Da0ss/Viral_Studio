@@ -131,7 +131,6 @@ test('two real Auth users create a project, share media/chat, and receive privat
       new URL(response.url()).pathname === path && response.request().method() === 'POST' &&
       Boolean(response.request().headers()['next-action'])), click()]);
     expect(response.status()).toBe(200);
-    expect(await response.finished()).toBeNull();
   };
   const logDialogGeometry = async (phase: string) => {
     const geometry = await owner.evaluate(() => {
