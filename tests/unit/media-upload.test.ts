@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/projects/[projectId]/media/route';
 import { createHash } from 'node:crypto';
 
@@ -19,6 +19,10 @@ function request(origin = 'http://localhost', withKey = true) {
   return new Request(`http://localhost/api/projects/${project}/media`, { method: 'POST', headers,
     body: JSON.stringify({ sha256: hash, mimeType: 'image/png', fileName: 'photo.png', size: png.length }) });
 }
+// Signed upload tokens expire; pin the clock so positive cases do not depend on the calendar date.
+const tokenExpiresAt = '2026-10-06T12:00:00.000Z';
+const beforeExpiry = new Date('2026-10-06T11:00:00.000Z');
+const afterExpiry = new Date('2026-10-06T12:00:01.000Z');
 function setup(options: { outcome?: string; status?: string; beginError?: boolean; existingToken?: string } = {}) {
   const bucket = { createSignedUploadUrl: vi.fn().mockResolvedValue({ data: { token: 'signed-token', signedUrl: '/signed' }, error: null }) };
   const clientRpc = vi.fn(async (name: string) => {
@@ -32,13 +36,18 @@ function setup(options: { outcome?: string; status?: string; beginError?: boolea
     return { data: null, error: { message: 'unexpected caller RPC' } };
   });
   const adminRpc = vi.fn(async (_name: string, args: { signed_token?: string }) => ({
-    data: [{ upload_token: args.signed_token ?? options.existingToken ?? null, expires_at: '2026-10-06T12:00:00.000Z' }], error: null,
+    data: [{ upload_token: args.signed_token ?? options.existingToken ?? null, expires_at: tokenExpiresAt }], error: null,
   }));
   mocks.client.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user' } }, error: null }) }, rpc: clientRpc });
   mocks.admin.mockReturnValue({ rpc: adminRpc, storage: { from: vi.fn(() => bucket) } });
   return { clientRpc, adminRpc, bucket };
 }
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(beforeExpiry);
+});
+afterEach(() => vi.useRealTimers());
 
 it('requires same-origin requests and a UUID idempotency key', async () => {
   expect((await POST(request('https://attacker.invalid'), context)).status).toBe(403);
@@ -66,6 +75,13 @@ it('replays the durable signed token without minting a new capability', async ()
   expect(response.status).toBe(200);
   expect((await response.json()).token).toBe('persisted-token');
   expect(client.bucket.createSignedUploadUrl).not.toHaveBeenCalled();
+});
+it('returns 410 when the signed token is already past its expiry', async () => {
+  vi.setSystemTime(afterExpiry);
+  const client = setup({ existingToken: 'persisted-token' });
+  const response = await POST(request(), context);
+  expect(response.status).toBe(410);
+  expect(client.bucket.createSignedUploadUrl).toHaveBeenCalledTimes(1);
 });
 it('returns a completed idempotent result without creating another signed URL', async () => {
   const client = setup({ outcome: 'completed' });
