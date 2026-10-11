@@ -165,7 +165,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     const inviteForm = owner.locator('.team-invite-form');
     await inviteForm.getByLabel('Почта участника').fill(viewerEmail!);
     await inviteForm.getByLabel('Проект, если доступ нужен только к нему').selectOption(projectId);
-    await inviteForm.getByLabel('Проект', { exact: true }).selectOption('editor');
+    await inviteForm.getByRole('combobox', { name: 'Проект', exact: true }).selectOption('editor');
     await inviteForm.getByRole('button', { name: 'Создать приглашение' }).click();
     const invitationField = inviteForm.getByLabel('Ссылка-приглашение');
     await expect(invitationField).toBeVisible();
@@ -226,7 +226,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
 
     stage('media upload and download');
     await owner.goto('/media');
-    await owner.getByLabel('Проект').selectOption(projectId);
+    await owner.getByRole('combobox', { name: 'Проект', exact: true }).selectOption(projectId);
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lWQAAAAASUVORK5CYII=', 'base64');
     await owner.getByLabel('Файл материала').setInputFiles({ name: mediaName, mimeType: 'image/png', buffer: png });
     await owner.getByRole('button', { name: 'Загрузить материал' }).click();
