@@ -127,6 +127,13 @@ test('two real Auth users create a project, share media/chat, and receive privat
     }
   });
   const stage = (name: string) => console.info(`[auth-e2e] ${testInfo.project.name}: ${name}`);
+  const performOwnerAction = async (path: string, click: () => Promise<void>) => {
+    const [response] = await Promise.all([owner.waitForResponse(response =>
+      new URL(response.url()).pathname === path && response.request().method() === 'POST' &&
+      Boolean(response.request().headers()['next-action'])), click()]);
+    expect(response.status()).toBe(200);
+    expect(await response.finished()).toBeNull();
+  };
   const logDialogGeometry = async (phase: string) => {
     const geometry = await owner.evaluate(() => {
       const dialog = document.querySelector<HTMLDialogElement>('dialog.project-modal');
@@ -182,7 +189,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
       await expect.poll(() => owner.evaluate(() => innerWidth)).toBe(device.viewport?.width);
       await expect.poll(() => dialog.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
     }
-    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+    await performOwnerAction('/projects', () => dialog.getByRole('button', { name: 'Сохранить' }).click());
     await expect(dialog.getByRole('status')).toContainText('Проект создан.');
     await dialog.getByRole('button', { name: 'Закрыть' }).click();
     await expect(owner.getByRole('heading', { name: projectName })).toBeVisible();
@@ -232,13 +239,13 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await owner.goto('/profile');
     await owner.getByLabel('Имя', { exact: true }).fill(`Owner ${fixtureId.slice(0, 8)}`);
     await owner.getByLabel('Должность').fill('Browser acceptance');
-    await owner.getByRole('button', { name: 'Сохранить' }).click();
+    await performOwnerAction('/profile', () => owner.getByRole('button', { name: 'Сохранить' }).click());
     await expect(owner.getByRole('status').filter({ hasText: 'Профиль сохранён.' })).toBeVisible();
     await owner.reload();
     await expect(owner.getByLabel('Имя', { exact: true })).toHaveValue(`Owner ${fixtureId.slice(0, 8)}`);
     const avatarPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lWQAAAAASUVORK5CYII=', 'base64');
     await owner.getByLabel('Файл аватара').setInputFiles({ name: `avatar-${fixtureId}.png`, mimeType: 'image/png', buffer: avatarPng });
-    await owner.getByRole('button', { name: 'Загрузить аватар' }).click();
+    await performOwnerAction('/profile', () => owner.getByRole('button', { name: 'Загрузить аватар' }).click());
     await expect(owner.getByRole('status').filter({ hasText: 'Аватар сохранён.' })).toBeVisible();
     const profileTab = await ownerContext.newPage();
     await profileTab.goto('/profile');
@@ -246,16 +253,16 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await expect(profileTab.getByLabel('Имя', { exact: true })).toHaveValue(`Owner ${fixtureId.slice(0, 8)}`);
     await profileTab.close();
     await owner.getByLabel('Язык').selectOption('en');
-    // Saving a new language reloads the page; wait for it before opening the menu.
-    await Promise.all([owner.waitForEvent('load'), owner.getByRole('button', { name: 'Сохранить' }).click()]);
+    // Saving a new language reloads the page; wait for the action and the reload before opening the menu.
+    await Promise.all([owner.waitForEvent('load'), performOwnerAction('/profile', () => owner.getByRole('button', { name: 'Сохранить' }).click())]);
     await expect(owner.locator('html')).toHaveAttribute('lang', 'en');
     await expectNavigationLabel('Projects');
     await owner.reload();
     await expectNavigationLabel('Media library');
     await expect(owner.getByRole('heading', { name: 'PROFILE' })).toBeVisible();
     await owner.getByLabel('Language').selectOption('kk');
-    // Saving a new language reloads the page; wait for it before opening the menu.
-    await Promise.all([owner.waitForEvent('load'), owner.getByRole('button', { name: 'Save' }).click()]);
+    // Saving a new language reloads the page; wait for the action and the reload before opening the menu.
+    await Promise.all([owner.waitForEvent('load'), performOwnerAction('/profile', () => owner.getByRole('button', { name: 'Save' }).click())]);
     await expect(owner.locator('html')).toHaveAttribute('lang', 'kk');
     const { data: kazakhProfile, error: kazakhProfileError } = await admin!.from('profiles').select('language').eq('email', ownerEmail!).single();
     expect(kazakhProfileError).toBeNull();
@@ -264,8 +271,8 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await owner.reload();
     await expectNavigationLabel('Медиа кітапхана');
     await owner.getByLabel('Тіл').selectOption('ru');
-    // Saving a new language reloads the page; wait for it before opening the menu.
-    await Promise.all([owner.waitForEvent('load'), owner.getByRole('button', { name: 'Сақтау' }).click()]);
+    // Saving a new language reloads the page; wait for the action and the reload before opening the menu.
+    await Promise.all([owner.waitForEvent('load'), performOwnerAction('/profile', () => owner.getByRole('button', { name: 'Сақтау' }).click())]);
     await expect(owner.locator('html')).toHaveAttribute('lang', 'ru');
     await expectNavigationLabel('Проекты');
 
@@ -361,6 +368,8 @@ test('two real Auth users create a project, share media/chat, and receive privat
     if (fixtureProject === 'mobile') await logDialogGeometry('after-failure').catch(() => {});
     console.info(`[auth-e2e-media] ${testInfo.project.name}: ${JSON.stringify({ responses: mediaResponses,
       feedback: await owner.locator('.media-upload [role="alert"], .media-upload [role="status"]').allTextContents().catch(() => []) })}`);
+    console.info(`[auth-e2e-feedback] ${testInfo.project.name}: ${JSON.stringify(await owner.locator(
+      '.project-modal [role="alert"], .project-modal [role="status"], .profile-form__status').allTextContents().catch(() => []))}`);
     throw error;
   } finally {
     const cleanup = await Promise.allSettled([ownerContext.close(), viewerContext.close()]);
