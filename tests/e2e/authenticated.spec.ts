@@ -170,7 +170,10 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await dialog.getByLabel('Описание').fill(projectDescription);
     await dialog.getByLabel('Тип').selectOption('ai');
     await dialog.getByLabel('Статус').selectOption('active');
-    if (fixtureProject === 'mobile') await logDialogGeometry('before-save');
+    if (fixtureProject === 'mobile') {
+      await expect.poll(() => owner.evaluate(() => innerWidth)).toBe(device.viewport?.width);
+      await expect.poll(() => dialog.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
+    }
     await dialog.getByRole('button', { name: 'Сохранить' }).click();
     await expect(dialog.getByRole('status')).toContainText('Проект создан.');
     await dialog.getByRole('button', { name: 'Закрыть' }).click();
@@ -242,6 +245,10 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await expect(owner.getByRole('heading', { name: 'PROFILE' })).toBeVisible();
     await owner.getByLabel('Language').selectOption('kk');
     await owner.getByRole('button', { name: 'Save' }).click();
+    await expect(owner.locator('.profile-form__status')).toContainText('Profile saved.');
+    const { data: kazakhProfile, error: kazakhProfileError } = await admin!.from('profiles').select('language').eq('email', ownerEmail!).single();
+    expect(kazakhProfileError).toBeNull();
+    expect(kazakhProfile?.language).toBe('kk');
     await expectNavigationLabel('Жобалар');
     await owner.reload();
     await expectNavigationLabel('Медиа кітапхана');
