@@ -72,3 +72,37 @@ node scripts/verify-hosted-backend.mjs
 ```
 
 Set `HOSTED_APP_BASE_URL` when the local app listens on a different origin. The script asserts the expected HTTP statuses and fails if the anonymous project query exposes rows.
+
+## Progress update — 2026-10-11 (current hosted run)
+
+This section records the later browser-assisted run. The credential inventory, Vercel metadata, and 503 observations above are historical results from before the server configuration was completed; they should not be read as the current configuration or deployment state.
+
+The Production deployment for commit `main105a9d0`, deployment `dpl_J3fyeEoQGSJVid4c64sabr7aQ1r6`, is `READY`. After the user added the sensitive `SUPABASE_SERVICE_ROLE_KEY`, the project’s server configuration was completed with separate sensitive `CRON_SECRET`, `MEDIA_CLEANUP_SECRET`, and `MEDIA_UPLOAD_RECONCILE_SECRET` values. `WORKER_METRICS_ENABLED` is `true`; `GENERATION_ENABLED`, `MEDIA_CLEANUP_ENABLED`, and `MEDIA_UPLOAD_RECONCILE_ENABLED` are `false`. Secret values are intentionally omitted.
+
+The browser session was already signed in. An isolated project named `Codex HTTP check 20261011-1718` was created for this verification. A 70-byte parent PNG fixture was uploaded successfully through the UI. Its signed download URL was opened through the UI with a 60-second expiry, and the downloaded bytes matched the local fixture: SHA-256 `4ff6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5`. A first version upload was still in progress when this update was recorded; its completion and verification are pending.
+
+The later internal-metrics probe attempt encountered a script bug and aborted before producing complete endpoint evidence. A wrong-secret request was observed returning HTTP 401 with `Cache-Control: no-store`. The expected metrics HTTP 200 and disabled cleanup/reconciliation HTTP 503 results have **not** been verified in this run, so the earlier 503 observations above remain historical only. Do not infer current worker endpoint behavior from those earlier responses.
+
+At that point, version verification, cleanup, reconciliation, additional HTTP roles and Realtime remained pending. The following completion record supersedes that intermediate state.
+
+### Completed Storage roundtrip and cleanup
+
+Both version uploads completed through the production UI. The history showed versions 1 and 2, each 70 bytes. All three downloads matched their source fixtures:
+
+| File | SHA-256 |
+| --- | --- |
+| parent.png | `4ff6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5` |
+| version-1.png | `619b0e8b0c8741604b8628c64323444df334846a0dfe13963662586a3603f14c` |
+| version-2.png | `6a34118ba2e0bf5da5ab14cb63b121e2e8b2987a876668a9b2f9c30e1357470b` |
+
+Browser delays caused signed URLs to expire before some download attempts; Supabase returned HTTP 400 `InvalidJWT` with an expired `exp` claim. Fresh links downloaded successfully. This is expected expiry behavior, not evidence of corrupted version data. The original and first version were downloaded once successfully; second-version verification used a fresh link after expiry. No provider requests were dispatched.
+
+Before cleanup, the global deletion queue was empty. `MEDIA_CLEANUP_ENABLED` was enabled and deployment `dpl_4nFeR49EQbvkosLLrg7SAzg8dL1r` became READY with the same commit. Only the exact fixture parent was deleted through the Supabase connector (the app's delete action was **not** browser-tested). The database cascaded both version rows and queued three Storage paths while retaining 210 bytes in quota until cleanup.
+
+`scripts/verify-hosted-cleanup.mjs` called the protected cleanup endpoint exactly once per queued object: all three returned HTTP 200 with `outcome=completed`. A subsequent database check confirmed zero Storage objects under the fixture project, zero pending deletions, three completed outbox entries, and zero quota usage. The empty fixture project was then removed using an exact ID/name guard and checks for zero usage and no Storage objects.
+
+The newly deployed metrics endpoint returned HTTP 200 with `Cache-Control: no-store`, the expected aggregate schema, and no checked private fields. Generation, cleanup and upload-reconcile queue depths were all zero; reserved and spent generation budget were zero. The internal daily budget limit exists, but its presence does not authorize enabling paid generation.
+
+Current Production flags: cleanup enabled; metrics enabled; generation and upload reconciliation disabled. Cron remains daily, so this does not meet any sub-minute cleanup target. The temporary local credentials file was deleted. `node --check` passed for the cleanup and worker verification scripts. Existing full unit/build checks were not repeated for a configuration-only deployment. The worker verification script now gathers all settled results so one failing check cannot discard evidence from other requests; its entire disabled-worker suite was not rerun after enabling cleanup.
+
+Remaining checks: viewer/outsider HTTP authorization (SQL role checks already passed in the separate DB report), upload idempotency over HTTP, app delete UI, stale-upload reconciliation, browser Realtime, and provider-backed generation with an explicit budget. Do not describe these as verified. Existing users, profiles and organizations were not changed.
