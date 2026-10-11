@@ -87,12 +87,14 @@ do $$ declare affected integer; begin
   update public.profiles set name='Other user profile' where id='11111111-1111-4111-8111-111111111111';
   get diagnostics affected=row_count;
   if affected<>0 then raise exception 'User changed another profile'; end if;
-  update public.assets set name='Unauthorized change' where id='abababab-abab-4bab-8bab-abababababab';
-  get diagnostics affected=row_count;
-  if affected<>0 then raise exception 'Commenter changed asset metadata'; end if;
-  delete from public.asset_versions where id='acacacac-acac-4cac-8cac-acacacacacac';
-  get diagnostics affected=row_count;
-  if affected<>0 then raise exception 'Commenter deleted asset version'; end if;
+  begin
+    update public.assets set name='Unauthorized change' where id='abababab-abab-4bab-8bab-abababababab';
+    raise exception 'Client changed asset metadata';
+  exception when insufficient_privilege then null; end;
+  begin
+    delete from public.asset_versions where id='acacacac-acac-4cac-8cac-acacacacacac';
+    raise exception 'Client directly deleted asset version';
+  exception when insufficient_privilege then null; end;
   delete from public.audit_log where id='adadadad-adad-4dad-8dad-adadadadadad';
   get diagnostics affected=row_count;
   if affected<>0 then raise exception 'Client deleted audit history'; end if;

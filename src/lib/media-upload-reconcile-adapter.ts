@@ -4,8 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 const canonicalPath = /^projects\/([0-9a-f-]{36})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}\.[a-z0-9]{1,8}$/;
 
 /** Claim one expired upload intent, remove only its reserved object, then fence the acknowledgement. */
-export async function runOneMediaUploadReconcile() {
-  const client = createAdminClient({ requestTimeoutMs: 20_000 });
+export async function runOneMediaUploadReconcile(deadlineAt?: number) {
+  const client = createAdminClient({ requestTimeoutMs: 20_000, ...(deadlineAt === undefined ? {} : { deadlineAt }) });
   const { data, error } = await client.rpc('claim_media_upload_cleanup');
   if (error || !Array.isArray(data)) throw new Error('Upload cleanup claim failed');
   if (data.length === 0) return 'empty' as const;

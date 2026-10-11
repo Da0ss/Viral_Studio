@@ -101,10 +101,40 @@ with $1/day global and $0.50/day per-user budgets. These are application limits,
 not a guaranteed provider billing cap; validate the provider's current pricing
 and account-level spending controls before enabling paid requests.
 
-`GET /api/internal/workers` requires an independent exact bearer `CRON_SECRET`
-and invokes only explicitly enabled consumers. `vercel.json` supplies a daily
-fallback, not a responsive autonomous production schedule. The authenticated
-generation detail page can advance eligible jobs while viewed. A suitable
-deployed frequent scheduler, monitoring and provider-backed acceptance remain
-required. Native Supabase and hosted service checks have not yet proved this
-implementation. No paid generation is certified by local mocks or PGlite.
+`GET /api/internal/workers` is the common external scheduler contract. Send
+`Authorization: Bearer <CRON_SECRET>`; the value must be an independent random
+32-byte lowercase hex secret. Calls are authenticated before queue work,
+responses are `no-store`, and output/logs include only aggregate counts and a
+random correlation ID. Each queue is disabled unless its matching
+`*_ENABLED=true` setting is explicitly configured.
+
+The route drains queues in round-robin order, one item at a time, up to four
+items per queue. It stops admitting work after 100 seconds of its configured
+120-second function budget, and requires 25 seconds of remaining budget for
+either media item or 75 seconds for a generation item. The absolute 100-second
+deadline flows through Supabase, Storage, and provider fetches, including response
+body reads; each request also has its own shorter timeout. New network requests
+are refused after the deadline, while empty or failed queues are not retried
+again in the same call. This bounds worker network activity inside the function
+window. An abort cannot prove a remote mutation was cancelled, so an uncertain
+acknowledgement still relies on lease fencing, idempotency, immutable outputs,
+and generation's `uncertain` state for recovery.
+
+`vercel.json` keeps a daily fallback. Current Vercel docs say Hobby Cron can run
+only once per day; Pro/Enterprise can schedule more frequently. An external
+scheduler can invoke the same authenticated GET endpoint at a chosen frequent
+interval, subject to queue idempotency/lease behavior. The authenticated
+generation detail page can also advance eligible jobs while viewed. Hosted
+service checks, monitoring and provider-backed acceptance remain required.
+No paid generation is certified by local mocks or PGlite.
+
+`GET /api/internal/worker-metrics` is an optional read-only alerting endpoint.
+It uses the same bearer `CRON_SECRET` and requires
+`WORKER_METRICS_ENABLED=true`. The service-role-only RPC returns queue depth,
+ready/retry/uncertain counts, oldest-ready age, and global daily generation
+budget totals. It contains no job identifiers, paths, prompts, or user-level
+budget rows. The retry count reflects attempts for deletion cleanup, pending
+cleanup state for uploads, and repeated provider polling for generation. Poll
+it from the external scheduler or monitoring system to alert
+on sustained ready backlog, oldest-ready age, uncertain generations, or low
+remaining daily budget. The endpoint is no-store and returns generic errors.

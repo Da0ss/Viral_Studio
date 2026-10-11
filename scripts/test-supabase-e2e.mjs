@@ -71,7 +71,7 @@ async function localCredentials() {
       resolve(root, 'node_modules', 'supabase', 'dist', 'supabase.js'),
       '--workdir', root, 'status', '--output', 'json',
     ], { cwd: root, windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024,
-      env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: '1' } }));
+      env: { ...process.env, TELEMETRY_DISABLED: '1', SUPABASE_TELEMETRY_DISABLED: '1' } }));
   } catch {
     throw new Error('Could not read local Supabase status. Start the disposable local stack first.');
   }
@@ -118,6 +118,7 @@ async function main() {
       ...process.env,
       CI: 'true',
       GENERATION_ENABLED: 'false',
+      E2E_NATIVE_SUPABASE_REQUIRED: '1',
       NEXT_PUBLIC_SUPABASE_URL: credentials.url,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: credentials.anonKey,
       NEXT_PUBLIC_APP_URL: 'http://127.0.0.1:3001',

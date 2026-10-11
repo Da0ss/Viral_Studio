@@ -15,7 +15,25 @@ const cleanSearch = (value: string) => value.normalize('NFKC').replace(/[^\p{L}\
 const one = (value: string | undefined, allowed: readonly string[]) => allowed.includes(value ?? '') ? value : undefined;
 export interface ProjectFilters { search: string; type?: ProjectType; status?: ProjectStatus; organization?: string; page: number; }
 export function parseProjectFilters(params: Record<string, string | string[] | undefined>): ProjectFilters { const get = (key: string) => typeof params[key] === 'string' ? params[key] as string : ''; return { search: cleanSearch(get('q')), type: one(get('type'), projectTypes) as ProjectType | undefined, status: one(get('status'), projectStatuses) as ProjectStatus | undefined, organization: /^[0-9a-f-]{36}$/i.test(get('organization')) ? get('organization') : undefined, page: Math.max(1, Math.min(Number.parseInt(get('page'), 10) || 1, 10_000)) }; }
-export async function getOrganizations(): Promise<OrganizationOption[]> { const user = await getCurrentUser(); if (!user) return []; const supabase = await createClient(); const { data } = await supabase.from('organization_members').select('organization_id, role, organizations(name)').eq('user_id', user.id).order('created_at'); return (data ?? []).flatMap((row) => { const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations; return org ? [{ id: row.organization_id, name: org.name, role: row.role }] : []; }); }
+export type OrganizationsResult =
+  | { organizations: OrganizationOption[]; error: null }
+  | { organizations: []; error: 'unauthenticated' | 'unavailable' };
+export async function getOrganizationsResult(authenticatedUserId?: string): Promise<OrganizationsResult> {
+  const userId = authenticatedUserId ?? (await getCurrentUser())?.id;
+  if (!userId) return { organizations: [], error: 'unauthenticated' };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('organization_members').select('organization_id, role, organizations(name)').eq('user_id', userId).order('created_at');
+  if (error) return { organizations: [], error: 'unavailable' };
+  return { organizations: (data ?? []).flatMap((row) => {
+    const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+    return org ? [{ id: row.organization_id, name: org.name, role: row.role }] : [];
+  }), error: null };
+}
+export async function getOrganizations(): Promise<OrganizationOption[]> {
+  const result = await getOrganizationsResult();
+  if (result.error === 'unavailable') throw new Error('Organization membership lookup failed');
+  return result.organizations;
+}
 export async function getGenerationProjects(): Promise<{ id: string; name: string }[]> {
   const user = await getCurrentUser();
   if (!user) return [];

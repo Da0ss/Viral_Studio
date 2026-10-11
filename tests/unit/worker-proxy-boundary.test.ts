@@ -11,12 +11,12 @@ beforeEach(() => {
   vi.resetAllMocks(); mocks.configured.mockReturnValue(true);
   mocks.create.mockReturnValue({ auth: { getClaims: vi.fn().mockResolvedValue({ data: null }) } });
 });
-it('delegates only the exact worker route to machine authentication', async () => {
-  const response = await updateSession(new NextRequest('http://localhost/api/internal/media-cleanup'));
+it.each(['/api/internal/media-cleanup', '/api/internal/media-upload-reconcile', '/api/internal/workers', '/api/internal/worker-metrics'])('delegates the exact worker route %s to machine authentication', async path => {
+  const response = await updateSession(new NextRequest(`http://localhost${path}`));
   expect(response.headers.get('x-middleware-next')).toBe('1');
   expect(mocks.create).not.toHaveBeenCalled(); expect(mocks.configured).not.toHaveBeenCalled();
 });
-it.each(['/api/internal/media-cleanup/other', '/api/internal/media-cleanup-extra', '/api/projects/test/media'])('retains guest API denial for %s', async path => {
+it.each(['/api/internal/media-cleanup/other', '/api/internal/media-cleanup-extra', '/api/internal/workers/other', '/api/internal/workers-extra', '/api/internal/worker-metrics/other', '/api/internal/worker-metrics-extra', '/api/projects/test/media'])('retains guest API denial for %s', async path => {
   const response = await updateSession(new NextRequest(`http://localhost${path}`));
   expect(response.status).toBe(401); expect(mocks.create).toHaveBeenCalledTimes(1);
 });

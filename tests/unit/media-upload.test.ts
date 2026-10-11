@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/projects/[projectId]/media/route';
 import { createHash } from 'node:crypto';
 
@@ -19,7 +19,7 @@ function request(origin = 'http://localhost', withKey = true) {
   return new Request(`http://localhost/api/projects/${project}/media`, { method: 'POST', headers,
     body: JSON.stringify({ sha256: hash, mimeType: 'image/png', fileName: 'photo.png', size: png.length }) });
 }
-function setup(options: { outcome?: string; status?: string; beginError?: boolean; existingToken?: string } = {}) {
+function setup(options: { outcome?: string; status?: string; beginError?: boolean; existingToken?: string; expiresAt?: string; persistedExpiresAt?: string } = {}) {
   const bucket = { createSignedUploadUrl: vi.fn().mockResolvedValue({ data: { token: 'signed-token', signedUrl: '/signed' }, error: null }) };
   const clientRpc = vi.fn(async (name: string) => {
     if (name === 'get_media_upload_status') return { data: [{ outcome: options.status ?? 'none', asset_id: options.status === 'completed' ? 'asset' : null }], error: null };
@@ -32,13 +32,23 @@ function setup(options: { outcome?: string; status?: string; beginError?: boolea
     return { data: null, error: { message: 'unexpected caller RPC' } };
   });
   const adminRpc = vi.fn(async (_name: string, args: { signed_token?: string }) => ({
-    data: [{ upload_token: args.signed_token ?? options.existingToken ?? null, expires_at: '2026-10-06T12:00:00.000Z' }], error: null,
+    data: [{
+      upload_token: args.signed_token ?? options.existingToken ?? null,
+      expires_at: args.signed_token
+        ? options.persistedExpiresAt ?? options.expiresAt ?? '2026-10-06T12:00:00.000Z'
+        : options.expiresAt ?? '2026-10-06T12:00:00.000Z',
+    }], error: null,
   }));
   mocks.client.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user' } }, error: null }) }, rpc: clientRpc });
   mocks.admin.mockReturnValue({ rpc: adminRpc, storage: { from: vi.fn(() => bucket) } });
   return { clientRpc, adminRpc, bucket };
 }
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-06T10:00:00.000Z'));
+});
+afterEach(() => vi.useRealTimers());
 
 it('requires same-origin requests and a UUID idempotency key', async () => {
   expect((await POST(request('https://attacker.invalid'), context)).status).toBe(403);
@@ -66,6 +76,17 @@ it('replays the durable signed token without minting a new capability', async ()
   expect(response.status).toBe(200);
   expect((await response.json()).token).toBe('persisted-token');
   expect(client.bucket.createSignedUploadUrl).not.toHaveBeenCalled();
+});
+it('denies a signed upload token when persistence returns an expired capability', async () => {
+  const client = setup({
+    existingToken: 'expired-token',
+    expiresAt: '2026-10-06T09:00:00.000Z',
+    persistedExpiresAt: '2026-10-06T09:00:00.000Z',
+  });
+  const response = await POST(request(), context);
+  expect(response.status).toBe(410);
+  expect(await response.json()).toEqual({ error: 'Срок загрузки истёк. Выберите файл заново.' });
+  expect(client.bucket.createSignedUploadUrl).toHaveBeenCalledOnce();
 });
 it('returns a completed idempotent result without creating another signed URL', async () => {
   const client = setup({ outcome: 'completed' });

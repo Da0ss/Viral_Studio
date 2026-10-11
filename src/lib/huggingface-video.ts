@@ -39,12 +39,12 @@ async function json(response: Response, failure: 'uncertain' | 'temporary' = 'un
 
 /** A submission error may mean the provider accepted and charged the request.
  * Never automatically submit again after `uncertain`; retain the reservation. */
-export async function submitVideo(prompt: string): Promise<string> {
+export async function submitVideo(prompt: string, deadlineAt?: number): Promise<string> {
   if (prompt.trim().length < 10 || prompt.length > 2000) throw new VideoProviderError('rejected');
   const auth = headers();
   let response: Response;
   try {
-    response = await createDeadlineFetch(20_000)(`${router}${modelPath}?_subdomain=queue`, {
+    response = await createDeadlineFetch(20_000, globalThis.fetch, deadlineAt)(`${router}${modelPath}?_subdomain=queue`, {
       method: 'POST', headers: auth, redirect: 'error',
       body: JSON.stringify({ prompt, num_frames: 81, num_inference_steps: 8, resolution: '480p', enable_safety_checker: true }),
     });
@@ -67,9 +67,9 @@ function queueUrl(path: string, suffix = '') {
   return `${router}${validateVideoRequestPath(path)}${suffix}?_subdomain=queue`;
 }
 
-export async function pollVideo(path: string): Promise<{ status: 'pending' } | { status: 'completed'; url: string }> {
+export async function pollVideo(path: string, deadlineAt?: number): Promise<{ status: 'pending' } | { status: 'completed'; url: string }> {
   const auth = headers();
-  const fetcher = createDeadlineFetch(20_000);
+  const fetcher = createDeadlineFetch(20_000, globalThis.fetch, deadlineAt);
   let statusResponse: Response;
   try { statusResponse = await fetcher(queueUrl(path, '/status'), { headers: auth, redirect: 'error' }); }
   catch { throw new VideoProviderError('temporary'); }
@@ -97,8 +97,8 @@ export function validateVideoDownloadUrl(value: unknown): string {
 
 /** Download bounded bytes for private Storage persistence; never expose the
  * provider's temporary result URL as the application's permanent output. */
-export async function downloadVideo(url: string): Promise<Uint8Array> {
-  const response = await createDeadlineFetch(30_000)(validateVideoDownloadUrl(url), { redirect: 'error' });
+export async function downloadVideo(url: string, deadlineAt?: number): Promise<Uint8Array> {
+  const response = await createDeadlineFetch(30_000, globalThis.fetch, deadlineAt)(validateVideoDownloadUrl(url), { redirect: 'error' });
   if (!response.ok || !response.body) throw new VideoProviderError('temporary');
   const size = response.headers.get('content-length');
   if (size && (!/^\d+$/.test(size) || Number(size) > maxBytes)) throw new VideoProviderError('invalid_result');
@@ -122,8 +122,8 @@ export async function downloadVideo(url: string): Promise<Uint8Array> {
   return bytes;
 }
 
-export async function cancelVideo(path: string): Promise<void> {
-  const response = await createDeadlineFetch(20_000)(queueUrl(path, '/cancel'), {
+export async function cancelVideo(path: string, deadlineAt?: number): Promise<void> {
+  const response = await createDeadlineFetch(20_000, globalThis.fetch, deadlineAt)(queueUrl(path, '/cancel'), {
     method: 'PUT', headers: headers(), redirect: 'error',
   });
   if (!response.ok) throw new VideoProviderError('temporary');

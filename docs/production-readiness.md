@@ -62,3 +62,6 @@ checks, not authenticated application acceptance. Hosted CI has not been run.
 
 Run locally: `pnpm dev`. Build: `pnpm build`. Serve built app: `pnpm start`.
 Keep this scope intact: guest success must not be promoted to complete acceptance.
+# Latest backend checkpoint
+
+See [2026-10-11 backend implementation](backend-implementation-2026-10-11.md) for current changes, local gate results, read-only hosted schema findings and deployment steps. Earlier dated results below are historical and do not establish acceptance of these changes.

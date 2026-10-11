@@ -38,7 +38,7 @@ async function isCompleted(admin: ReturnType<typeof createAdminClient>, id: stri
   return data?.status === 'completed';
 }
 
-async function advance(admin: ReturnType<typeof createAdminClient>, job: ClaimedJob): Promise<boolean> {
+async function advance(admin: ReturnType<typeof createAdminClient>, job: ClaimedJob, deadlineAt?: number): Promise<boolean> {
   const { job_id: id, lease_token: leaseToken } = job;
   if (job.dispatch_state === 'submitting') {
     if (job.cancel_requested) {
@@ -55,7 +55,7 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
       }) : false;
     }
     try {
-      const requestPath = await submitVideo(job.prompt);
+      const requestPath = await submitVideo(job.prompt, deadlineAt);
       const { data, error } = await admin.rpc('record_generation_submission', {
         target_job: id, token: leaseToken, request_path: requestPath,
       });
@@ -81,7 +81,7 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
   }
   if (job.dispatch_state === 'cancelling' || job.cancel_requested) {
     try {
-      await cancelVideo(requestPath);
+      await cancelVideo(requestPath, deadlineAt);
       return acknowledged(admin, 'finish_generation_cancel', { target_job: id, token: leaseToken });
     } catch {
       return acknowledged(admin, 'retry_generation_poll', {
@@ -92,7 +92,7 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
 
   let result;
   try {
-    result = await pollVideo(requestPath);
+    result = await pollVideo(requestPath, deadlineAt);
   } catch (error) {
     const code = codeOf(error);
     if (code === 'temporary' || code === 'unconfigured') {
@@ -116,7 +116,7 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
 
   let bytes: Uint8Array;
   try {
-    bytes = await downloadVideo(result.url);
+    bytes = await downloadVideo(result.url, deadlineAt);
   } catch (error) {
     const code = codeOf(error);
     if (code === 'temporary') {
@@ -171,15 +171,15 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
 }
 
 /** Called by the exact-auth cron aggregator. The feature flag is fail-closed. */
-export async function runGenerationWorkerBatch(batchSize = 1): Promise<{ claimed: number; advanced: number }> {
+export async function runGenerationWorkerBatch(batchSize = 1, deadlineAt?: number): Promise<{ claimed: number; advanced: number }> {
   if (!enabled()) return { claimed: 0, advanced: 0 };
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > maxBatchSize) throw new Error('Invalid generation worker batch size.');
-  const admin = createAdminClient({ requestTimeoutMs: 30_000 });
+  const admin = createAdminClient({ requestTimeoutMs: 30_000, ...(deadlineAt === undefined ? {} : { deadlineAt }) });
   const { data, error } = await admin.rpc('claim_generation_jobs', { batch_size: batchSize });
   if (error) throw new Error('Could not claim generation jobs.');
   const jobs = (data ?? []) as ClaimedJob[];
   let advanced = 0;
-  for (const job of jobs) if (await advance(admin, job)) advanced += 1;
+  for (const job of jobs) if (await advance(admin, job, deadlineAt)) advanced += 1;
   return { claimed: jobs.length, advanced };
 }
 
