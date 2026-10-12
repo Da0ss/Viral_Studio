@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProfileForm } from '@/components/profile-form';
 import type { ProfileValues } from '@/types/profile';
@@ -32,6 +33,20 @@ async function selectAvatar(user: ReturnType<typeof userEvent.setup>) {
   await user.upload(screen.getByLabelText('Файл аватара'), new File(['fake bytes'], 'photo.png', { type: 'image/png' }));
 }
 describe('profile and avatar operation coordination', () => {
+  it('keeps server-rendered controls disabled until saved values and handlers are ready', async () => {
+    const markup = renderToString(<LocaleProvider locale="kk"><ProfileForm initialProfile={{ ...profile, language: 'kk' }} initialAvatarUrl={null} /></LocaleProvider>);
+    const server = document.createElement('div');
+    server.innerHTML = markup;
+    expect(server.querySelector<HTMLFieldSetElement>('.profile-fields')?.disabled).toBe(true);
+    expect(server.querySelector<HTMLFieldSetElement>('.notification-settings')?.disabled).toBe(true);
+    expect(server.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
+    const user = userEvent.setup();
+    render(<LocaleProvider locale="kk"><ProfileForm initialProfile={{ ...profile, language: 'kk' }} initialAvatarUrl={null} /></LocaleProvider>);
+    await waitFor(() => expect(screen.getByLabelText('Тіл').closest('fieldset')?.disabled).toBe(false));
+    expect((screen.getByLabelText('Тіл') as HTMLSelectElement).value).toBe('kk');
+    await user.selectOptions(screen.getByLabelText('Тіл'), 'ru');
+    expect((screen.getByRole('button', { name: 'Сақтау', exact: true }) as HTMLButtonElement).disabled).toBe(false);
+  });
   it('updates the saved baseline and clears retry controls without a signed preview', async () => {
     mocks.upload.mockResolvedValue({ status: 'uploaded', avatarPath: 'avatars/user/saved.png', signedUrl: null, warning: 'Аватар сохранён, но предпросмотр недоступен.' });
     const user = await editName();

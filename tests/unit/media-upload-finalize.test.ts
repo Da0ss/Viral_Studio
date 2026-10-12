@@ -52,6 +52,23 @@ it('fails closed without reflecting private transport details when Storage redir
   expect(JSON.stringify(await response.json())).not.toContain('private credential');
   expect(client.adminRpc).not.toHaveBeenCalledWith('finish_media_upload', expect.anything());
 });
+it.each([404, 503])('keeps the intent retryable when Storage responds %i without the object', async status => {
+  const client = setup();
+  mocks.storageFetch.mockResolvedValue({ ok: false, status, headers: new Headers(), body: null });
+  const response = await POST(request(), context);
+  expect(response.status).toBe(503);
+  expect(response.headers.get('retry-after')).toBe('3');
+  expect(await response.json()).toEqual({ error: 'msg.upload.confirmFailed' });
+  expect(client.adminRpc).not.toHaveBeenCalledWith('finish_media_upload', expect.anything());
+});
+it('keeps the intent retryable when Storage returns success without a body', async () => {
+  const client = setup();
+  mocks.storageFetch.mockResolvedValue({ ok: true, status: 200, headers: new Headers(), body: null });
+  const response = await POST(request(), context);
+  expect(response.status).toBe(503);
+  expect(response.headers.get('retry-after')).toBe('3');
+  expect(client.adminRpc).not.toHaveBeenCalledWith('finish_media_upload', expect.anything());
+});
 it('does not create asset metadata when stored content has a different hash', async () => {
   const client = setup(new Uint8Array([1, 2, 3]));
   expect((await POST(request(), context)).status).toBe(422);

@@ -2,7 +2,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { mediaFormats, validateMediaMetadata, type MediaMetadataError } from '@/lib/media-file';
-import { createClient } from '@/lib/supabase/browser';
+import { createUploadClient } from '@/lib/supabase/upload';
 import { useI18n } from '@/components/locale-provider';
 
 const metadataErrors: Record<MediaMetadataError, 'media.emptyFile' | 'media.tooLarge' | 'media.unsupportedFormat'> = {
@@ -42,6 +42,7 @@ export function MediaUpload({ projects, versionTarget, onUploaded }: { projects:
       const fileHash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
       fingerprint = Array.from(new Uint8Array(fileHash), byte => byte.toString(16).padStart(2, '0')).join('');
     } catch { setError(t('media.readError')); return; }
+    if (busy.current) return;
     const retryKey = `media-upload:${project}:${versionTarget?.assetId ?? 'asset'}:${file.type}:${file.size}:${encodeURIComponent(file.name)}:${fingerprint}`;
     let idempotencyKey: string;
     try {
@@ -53,7 +54,7 @@ export function MediaUpload({ projects, versionTarget, onUploaded }: { projects:
       let unresolved = false;
       try { unresolved = sessionStorage.getItem(`${retryKey}:pending`) === 'true'; } catch { /* Storage is optional. */ }
       if (unresolved) {
-        const status = await fetch(`/api/projects/${project}/media`, { method: 'GET', headers: { 'Idempotency-Key': idempotencyKey, 'X-Content-SHA256': fingerprint } });
+        const status = await fetch(`/api/projects/${project}/media`, { method: 'GET', headers: { 'Idempotency-Key': idempotencyKey, 'X-Content-SHA256': fingerprint }, signal: AbortSignal.timeout(20_000) });
         if (status.status === 202) {
           // Safely replay the same signed capability and ask the finalizer to
           // resolve an upload whose earlier acknowledgement may have been lost.
@@ -71,6 +72,7 @@ export function MediaUpload({ projects, versionTarget, onUploaded }: { projects:
       }
       const response = await fetch(`/api/projects/${project}/media`, {
         method: 'POST', headers: { 'Idempotency-Key': idempotencyKey, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(45_000),
         body: JSON.stringify({ sha256: fingerprint, mimeType: file.type, fileName: file.name.slice(0, 255), size: file.size, ...(versionTarget ? { targetAssetId: versionTarget.assetId } : {}) }),
       });
       if (response.status === 202) {
@@ -90,10 +92,21 @@ export function MediaUpload({ projects, versionTarget, onUploaded }: { projects:
       if (response.status === 201 && typeof intent.id === 'string') { completeUpload(element, retryKey); return; }
       if (response.status !== 200 || typeof intent.intentId !== 'string' || typeof intent.path !== 'string' || typeof intent.token !== 'string' || typeof intent.leaseToken !== 'string') throw new Error('Unexpected response');
       setMessage(t('media.uploading'));
-      try { await createClient().storage.from('project-media').uploadToSignedUrl(intent.path, intent.token, file, { contentType: file.type }); }
+      // Once Storage can have received the file, a retry must first reconcile
+      // this intent, including when the final acknowledgement is lost.
+      try { sessionStorage.setItem(`${retryKey}:pending`, 'true'); } catch { /* Storage is optional. */ }
+      try {
+        const { error: uploadError } = await createUploadClient().storage.from('project-media').uploadToSignedUrl(intent.path, intent.token, file, { contentType: file.type });
+        const storageStatus = uploadError?.status ?? Number(uploadError?.statusCode);
+        const duplicate = uploadError && 'code' in uploadError && ['ResourceAlreadyExists', 'KeyAlreadyExists'].includes(String(uploadError.code));
+        if (uploadError && storageStatus >= 400 && storageStatus < 500 && storageStatus !== 409 && !duplicate) {
+          setMessage(''); setError(t('media.uploadFailed')); return;
+        }
+      }
       catch { /* A lost/duplicate acknowledgement is resolved by server verification below. */ }
       const finalized = await fetch(`/api/projects/${project}/media/finalize`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(120_000),
         body: JSON.stringify({ intentId: intent.intentId, leaseToken: intent.leaseToken }),
       });
       if (finalized.status === 422) {
@@ -104,8 +117,14 @@ export function MediaUpload({ projects, versionTarget, onUploaded }: { projects:
         setMessage(t('media.received'));
         setError(t('media.retryCheck')); return;
       }
+      if (finalized.status !== 201) {
+        if (finalized.status === 410) clearRetryKey(retryKey);
+        setMessage('');
+        setError(finalized.status === 401 ? t('media.loginAgain') : finalized.status === 403 ? t('media.forbidden') : finalized.status === 410 ? t('media.uploadExpired') : t('media.confirmError'));
+        return;
+      }
       const result = await finalized.json();
-      if (finalized.status !== 201 || typeof result.id !== 'string') throw new Error('Unexpected finalization response');
+      if (typeof result.id !== 'string') throw new Error('Unexpected finalization response');
       completeUpload(element, retryKey);
     } catch { setError(t('media.confirmError')); }
     finally { busy.current = false; setPending(false); }

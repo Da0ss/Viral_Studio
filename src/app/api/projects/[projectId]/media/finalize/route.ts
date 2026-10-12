@@ -9,9 +9,11 @@ import { hasTrustedOrigin } from '@/lib/request-origin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
-const reply = (error: string, status: number) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store', 'X-App-Error': error } });
+const reply = (error: string, status: number, extraHeaders: Record<string, string> = {}) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store', 'X-App-Error': error, ...extraHeaders } });
 
-async function downloadBounded(path: string): Promise<Uint8Array | null> {
+type DownloadResult = { status: 'available'; bytes: Uint8Array } | { status: 'unavailable' } | { status: 'invalid' };
+
+async function downloadBounded(path: string): Promise<DownloadResult> {
   const { url } = getSupabasePublicConfig();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) throw new Error('Storage service is not configured');
@@ -20,9 +22,9 @@ async function downloadBounded(path: string): Promise<Uint8Array | null> {
     redirect: 'error',
     headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}` },
   });
-  if (!response.ok || !response.body) return null;
+  if (!response.ok || !response.body) return { status: 'unavailable' };
   const declaredLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declaredLength) && declaredLength > maxMediaBytes) { await response.body.cancel(); return null; }
+  if (Number.isFinite(declaredLength) && declaredLength > maxMediaBytes) { await response.body.cancel(); return { status: 'invalid' }; }
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = []; let total = 0;
   try {
@@ -30,13 +32,13 @@ async function downloadBounded(path: string): Promise<Uint8Array | null> {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > maxMediaBytes) { await reader.cancel(); return null; }
+      if (total > maxMediaBytes) { await reader.cancel(); return { status: 'invalid' }; }
       chunks.push(value);
     }
   } finally { reader.releaseLock(); }
   const bytes = new Uint8Array(total); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return bytes;
+  return { status: 'available', bytes };
 }
 
 export async function POST(request: Request, context: { params: Promise<{ projectId: string }> }) {
@@ -76,8 +78,11 @@ export async function POST(request: Request, context: { params: Promise<{ projec
     if (metadataError || !Array.isArray(metadata) || metadata.length !== 1) return reply('msg.upload.checkFailed', 502);
     const intent = metadata[0];
     if (typeof intent.object_path !== 'string' || typeof intent.mime_type !== 'string' || typeof intent.content_sha256 !== 'string' || !Number.isSafeInteger(Number(intent.size_bytes)) || Number(intent.size_bytes) < 1 || Number(intent.size_bytes) > maxMediaBytes) return reply('msg.upload.checkFailed', 502);
-    const bytes = await downloadBounded(intent.object_path);
-    if (!bytes || bytes.byteLength !== Number(intent.size_bytes) || bytes.byteLength > maxMediaBytes) return reply('msg.upload.hashMismatch', 422);
+    const download = await downloadBounded(intent.object_path);
+    if (download.status === 'unavailable') return reply('msg.upload.confirmFailed', 503, { 'Retry-After': '3' });
+    if (download.status === 'invalid') return reply('msg.upload.hashMismatch', 422);
+    const { bytes } = download;
+    if (bytes.byteLength !== Number(intent.size_bytes)) return reply('msg.upload.hashMismatch', 422);
     const hash = createHash('sha256').update(bytes).digest('hex');
     if (hash !== intent.content_sha256 || !hasMediaSignature(bytes, intent.mime_type as MediaMime)) return reply('msg.upload.formatCheckFailed', 422);
     const { data: assetId, error: finishError } = await admin.rpc('finish_media_upload', {

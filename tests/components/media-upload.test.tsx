@@ -7,9 +7,9 @@ import { LocaleProvider } from '@/components/locale-provider';
 const mocks = vi.hoisted(() => ({ refresh: vi.fn(), fetch: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
 const storage = vi.hoisted(() => ({ upload: vi.fn() }));
-vi.mock('@/lib/supabase/browser', () => ({ createClient: () => ({ storage: { from: () => ({ uploadToSignedUrl: storage.upload }) } }) }));
+vi.mock('@/lib/supabase/upload', () => ({ createUploadClient: () => ({ storage: { from: () => ({ uploadToSignedUrl: storage.upload }) } }) }));
 const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal('fetch', mocks.fetch); });
+beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); vi.stubGlobal('fetch', mocks.fetch); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function prepare() {
   const user = userEvent.setup();
@@ -57,4 +57,58 @@ it('retains file selection and redacts unsuccessful response details', async () 
   expect((screen.getByLabelText('Файл материала') as HTMLInputElement).files?.length).toBe(1);
   await waitFor(() => expect((screen.getByRole('button', { name: 'Загрузить материал' }) as HTMLButtonElement).disabled).toBe(false));
   expect(mocks.refresh).not.toHaveBeenCalled();
+});
+
+const preparedIntent = { intentId: '12121212-1212-4212-8212-121212121212', leaseToken: '13131313-1313-4313-8313-131313131313', path: `projects/${id}/12121212-1212-4212-8212-121212121212/video.mp4`, token: 'signed' };
+
+it('reuses the upload intent after a definitive Storage rejection', async () => {
+  mocks.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => preparedIntent });
+  storage.upload.mockResolvedValueOnce({ data: null, error: { status: 403, message: 'private rejection detail' } });
+  await prepare();
+  fireEvent.submit(screen.getByRole('form', { name: 'Загрузка материала' }));
+  expect((await screen.findByRole('alert')).textContent).not.toContain('private');
+  expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Загрузить материал' }) as HTMLButtonElement).disabled).toBe(false));
+  const firstKey = mocks.fetch.mock.calls[0][1].headers['Idempotency-Key'];
+  mocks.fetch
+    .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'pending' }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => preparedIntent })
+    .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'asset' }) });
+  storage.upload.mockResolvedValueOnce({ data: {}, error: null });
+  fireEvent.submit(screen.getByRole('form', { name: 'Загрузка материала' }));
+  await screen.findByText('Файл успешно загружен.');
+  expect(mocks.fetch.mock.calls[1][1].method).toBe('GET');
+  expect(mocks.fetch.mock.calls[2][1].headers['Idempotency-Key']).toBe(firstKey);
+  expect(storage.upload).toHaveBeenCalledTimes(2);
+});
+
+it('settles a failed finalization without consuming its body and reconciles on retry', async () => {
+  const unreadBody = vi.fn(() => new Promise(() => {}));
+  mocks.fetch
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => preparedIntent })
+    .mockResolvedValueOnce({ ok: false, status: 503, json: unreadBody });
+  storage.upload.mockResolvedValue({ data: {}, error: null });
+  await prepare();
+  fireEvent.submit(screen.getByRole('form', { name: 'Загрузка материала' }));
+  await screen.findByRole('alert');
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Загрузить материал' }) as HTMLButtonElement).disabled).toBe(false));
+  expect(unreadBody).not.toHaveBeenCalled();
+  const firstKey = mocks.fetch.mock.calls[0][1].headers['Idempotency-Key'];
+  mocks.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'completed', id: 'asset' }) });
+  fireEvent.submit(screen.getByRole('form', { name: 'Загрузка материала' }));
+  await screen.findByText('Файл успешно загружен.');
+  expect(mocks.fetch.mock.calls[2][1]).toMatchObject({ method: 'GET', headers: { 'Idempotency-Key': firstKey } });
+  expect(storage.upload).toHaveBeenCalledTimes(1);
+});
+
+it('verifies the existing object when Storage reports a duplicate after a lost acknowledgement', async () => {
+  mocks.fetch
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => preparedIntent })
+    .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: 'asset' }) });
+  storage.upload.mockResolvedValue({ data: null, error: { status: 409, code: 'ResourceAlreadyExists' } });
+  await prepare();
+  fireEvent.submit(screen.getByRole('form', { name: 'Загрузка материала' }));
+  await screen.findByText('Файл успешно загружен.');
+  expect(mocks.fetch.mock.calls[1][0]).toBe(`/api/projects/${id}/media/finalize`);
+  expect(sessionStorage.length).toBe(0);
 });

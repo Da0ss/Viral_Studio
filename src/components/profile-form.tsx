@@ -28,7 +28,8 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
     mode: 'onBlur',
     shouldFocusError: true,
   });
-  const { register, handleSubmit, reset, setError, setFocus, formState: { errors, isDirty } } = form;
+  const { register, handleSubmit, reset, setError, setFocus, formState: { errors, isDirty, isReady } } = form;
+  // Server-rendered fields must wait for registration, or hydration can overwrite an early edit.
   const state = saveState === 'saving' || saveState === 'error' ? saveState : isDirty ? 'dirty' : saveState === 'saved' ? 'saved' : 'pristine';
 
   const onInvalid = (formErrors: typeof errors) => {
@@ -71,8 +72,8 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
 
   return <form className="profile-form" noValidate aria-busy={state === 'saving' || avatarUploading} onSubmit={event => { void handleSubmit(onSubmit, onInvalid)(event); }}>
     <div className="profile-form__status" aria-live="polite">{state === 'dirty' && t('profile.unsaved')}{state === 'saving' && t('profile.saving')}{state === 'saved' && successMessage}{state === 'error' && errorMessage && tm(errorMessage)}</div>
-    <AvatarUpload initialUrl={avatarUrl} disabled={state === 'saving'} acquireUpload={() => { if (operation.current) return false; operation.current = 'avatar'; setAvatarUploading(true); return true; }} releaseUpload={() => { operation.current = null; setAvatarUploading(false); }} onUploaded={(avatarPath, signedUrl) => { setSavedProfile((previous) => ({ ...previous, avatar_path: avatarPath })); setAvatarUrl(signedUrl); form.resetField('avatar_path', { defaultValue: avatarPath }); }} />
-    <fieldset className="profile-grid profile-fields" disabled={state === 'saving'}>
+    <AvatarUpload initialUrl={avatarUrl} disabled={!isReady || state === 'saving'} acquireUpload={() => { if (operation.current) return false; operation.current = 'avatar'; setAvatarUploading(true); return true; }} releaseUpload={() => { operation.current = null; setAvatarUploading(false); }} onUploaded={(avatarPath, signedUrl) => { setSavedProfile((previous) => ({ ...previous, avatar_path: avatarPath })); setAvatarUrl(signedUrl); form.resetField('avatar_path', { defaultValue: avatarPath }); }} />
+    <fieldset className="profile-grid profile-fields" disabled={!isReady || state === 'saving'}>
       <Field label={t('profile.name')} error={errors.name?.message}><input {...register('name')} autoComplete="name" /></Field>
       <Field label={t('profile.email')} error={errors.email?.message}><input {...register('email')} type="email" autoComplete="email" /></Field>
       <Field label={t('profile.role')} error={errors.role?.message}><input {...register('role')} autoComplete="organization-title" /></Field>
@@ -80,8 +81,8 @@ export function ProfileForm({ initialProfile, initialAvatarUrl }: ProfileFormPro
       <Field label={t('profile.language')} error={errors.language?.message}><select {...register('language')}>{languages.map((language) => <option key={language} value={language}>{languageLabels[language]}</option>)}</select></Field>
       <Field label={t('profile.timezone')} error={errors.timezone?.message}><select {...register('timezone')}>{timezones.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}</select></Field>
     </fieldset>
-    <fieldset className="notification-settings" disabled={state === 'saving'}><legend>{t('profile.notifications')}</legend><label><input {...register('notification_email')} type="checkbox" /> {t('profile.emailNotifications')}</label><label><input {...register('notification_browser')} type="checkbox" /> {t('profile.browserNotifications')}</label><label><input {...register('notification_marketing')} type="checkbox" /> {t('profile.marketing')}</label></fieldset>
-    <div className="profile-actions"><button className="ghost-button" type="button" disabled={!isDirty || state === 'saving' || avatarUploading} onClick={() => { reset(savedProfile); setSaveState('pristine'); }}>{t('profile.cancel')}</button><button className="cta" type="submit" disabled={!isDirty || state === 'saving' || avatarUploading}><span>{state === 'saving' ? t('profile.saving') : t('common.save')}</span><i className="icon ph ph-check" /></button></div>
+    <fieldset className="notification-settings" disabled={!isReady || state === 'saving'}><legend>{t('profile.notifications')}</legend><label><input {...register('notification_email')} type="checkbox" /> {t('profile.emailNotifications')}</label><label><input {...register('notification_browser')} type="checkbox" /> {t('profile.browserNotifications')}</label><label><input {...register('notification_marketing')} type="checkbox" /> {t('profile.marketing')}</label></fieldset>
+    <div className="profile-actions"><button className="ghost-button" type="button" disabled={!isReady || !isDirty || state === 'saving' || avatarUploading} onClick={() => { reset(savedProfile); setSaveState('pristine'); }}>{t('profile.cancel')}</button><button className="cta" type="submit" disabled={!isReady || !isDirty || state === 'saving' || avatarUploading}><span>{state === 'saving' ? t('profile.saving') : t('common.save')}</span><i className="icon ph ph-check" /></button></div>
     {state === 'saved' && <div className="profile-toast" role="status">{successMessage}</div>}
   </form>;
 }
