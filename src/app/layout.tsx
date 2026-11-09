@@ -4,6 +4,7 @@ import { Header } from '@/components/header';
 import { getCurrentProfile } from '@/lib/profile';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { LocaleProvider } from '@/components/locale-provider';
+import { GoogleAnalytics } from '@/components/google-analytics';
 
 export const metadata: Metadata = {
   title: 'VIRAL / Studio',
@@ -22,6 +23,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <Header user={user ? { email: user.email, name: profile?.name } : null} />
           {children}
         </LocaleProvider>
+        <GoogleAnalytics />
       </body>
     </html>
   );
