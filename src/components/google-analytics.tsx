@@ -2,8 +2,9 @@ import Script from 'next/script';
 import { getGaMeasurementId } from '@/lib/analytics';
 
 /**
- * Google Analytics 4. Renders nothing unless NEXT_PUBLIC_GA_MEASUREMENT_ID is
- * set to a valid GA4 ID, so local runs, tests and previews stay untracked.
+ * Google Analytics 4. Renders nothing unless getGaMeasurementId() returns an
+ * ID (Vercel production, or an explicit NEXT_PUBLIC_GA_MEASUREMENT_ID), so
+ * local runs, tests and previews stay untracked.
  * Page changes inside the app are counted by GA4 "Enhanced measurement"
  * (browser history events), which is on by default for new web streams.
  */
