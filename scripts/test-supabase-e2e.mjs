@@ -138,7 +138,7 @@ async function main() {
     console.log('Building production app with the disposable local Supabase public configuration.');
     await run('node_modules/next/dist/bin/next', ['build'], env);
     console.log('Running authenticated browser acceptance against local Supabase.');
-    await run('node_modules/@playwright/test/cli.js', ['test', 'tests/e2e/authenticated.spec.ts'], env);
+    await run('node_modules/@playwright/test/cli.js', ['test', 'tests/e2e/authenticated.spec.ts', '--workers=1'], env);
   } catch (error) {
     primaryFailure = error;
   } finally {
