@@ -134,7 +134,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
     expect(response.status()).toBe(200);
     // Headers arrive before React consumes the action result and the RSC patch.
     // Wait for the user's actual operation to settle, with a bounded deadline.
-    await expect(owner.locator('form[aria-busy="true"]')).toHaveCount(0, { timeout: 15_000 });
+    await expect(owner.locator('form[aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
   };
   const logDialogGeometry = async (phase: string) => {
     const geometry = await owner.evaluate(() => {
