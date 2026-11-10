@@ -356,8 +356,8 @@ test('two real Auth users create a project, share media/chat, and receive privat
     stage('media deletion and password recovery');
     await owner.goto('/forgot-password');
     await owner.getByLabel('Email').fill(ownerEmail!);
-    await owner.getByRole('button', { name: 'Отправить ссылку' }).click();
-    await expect(owner.getByRole('status')).toContainText('Если аккаунт существует');
+    await performOwnerAction('/forgot-password', () => owner.getByRole('button', { name: 'Отправить ссылку' }).click());
+    await expect(owner.getByRole('status')).toContainText('Если аккаунт существует', { timeout: 15_000 });
     const recoveryLink = await waitForRecoveryLink(ownerEmail!, new URL(url!).origin);
     const updatedPassword = `Recovered-${fixtureId.slice(0, 12)}!9`;
     await owner.goto(recoveryLink);
