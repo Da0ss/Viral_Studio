@@ -132,9 +132,8 @@ test('two real Auth users create a project, share media/chat, and receive privat
       new URL(response.url()).pathname === path && response.request().method() === 'POST' &&
       Boolean(response.request().headers()['next-action'])), click()]);
     expect(response.status()).toBe(200);
-    // Headers arrive before React consumes the action result and the RSC patch.
-    // Wait for the user's actual operation to settle, with a bounded deadline.
-    await expect(owner.locator('form[aria-busy="true"]')).toHaveCount(0, { timeout: 15_000 });
+    // The caller waits for the resulting success message or navigation below.
+
   };
   const logDialogGeometry = async (phase: string) => {
     const geometry = await owner.evaluate(() => {
@@ -192,7 +191,7 @@ test('two real Auth users create a project, share media/chat, and receive privat
       await expect.poll(() => dialog.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
     }
     await performOwnerAction('/projects', () => dialog.getByRole('button', { name: 'Сохранить' }).click());
-    await expect(dialog.getByRole('status')).toContainText('Проект создан.');
+    await expect(dialog.getByRole('status')).toContainText('Проект создан.', { timeout: 15_000 });
     await dialog.getByRole('button', { name: 'Закрыть' }).click();
     await expect(owner.getByRole('heading', { name: projectName })).toBeVisible();
 
@@ -242,13 +241,13 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await owner.getByLabel('Имя', { exact: true }).fill(`Owner ${fixtureId.slice(0, 8)}`);
     await owner.getByLabel('Должность').fill('Browser acceptance');
     await performOwnerAction('/profile', () => owner.getByRole('button', { name: 'Сохранить' }).click());
-    await expect(owner.getByRole('status').filter({ hasText: 'Профиль сохранён.' })).toBeVisible();
+    await expect(owner.getByRole('status').filter({ hasText: 'Профиль сохранён.' })).toBeVisible({ timeout: 15_000 });
     await owner.reload();
     await expect(owner.getByLabel('Имя', { exact: true })).toHaveValue(`Owner ${fixtureId.slice(0, 8)}`);
     const avatarPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lWQAAAAASUVORK5CYII=', 'base64');
     await owner.getByLabel('Файл аватара').setInputFiles({ name: `avatar-${fixtureId}.png`, mimeType: 'image/png', buffer: avatarPng });
     await performOwnerAction('/profile', () => owner.getByRole('button', { name: 'Загрузить аватар' }).click());
-    await expect(owner.getByRole('status').filter({ hasText: 'Аватар сохранён.' })).toBeVisible();
+    await expect(owner.getByRole('status').filter({ hasText: 'Аватар сохранён.' })).toBeVisible({ timeout: 15_000 });
     const profileTab = await ownerContext.newPage();
     await profileTab.goto('/profile');
     await expect(profileTab.getByRole('region', { name: 'Аватар', exact: true }).getByRole('img')).toBeVisible();
@@ -356,15 +355,15 @@ test('two real Auth users create a project, share media/chat, and receive privat
     stage('media deletion and password recovery');
     await owner.goto('/forgot-password');
     await owner.getByLabel('Email').fill(ownerEmail!);
-    await owner.getByRole('button', { name: 'Отправить ссылку' }).click();
-    await expect(owner.getByRole('status')).toContainText('Если аккаунт существует');
+    await performOwnerAction('/forgot-password', () => owner.getByRole('button', { name: 'Отправить ссылку' }).click());
+    await expect(owner.getByRole('status')).toContainText('Если аккаунт существует', { timeout: 15_000 });
     const recoveryLink = await waitForRecoveryLink(ownerEmail!, new URL(url!).origin);
     const updatedPassword = `Recovered-${fixtureId.slice(0, 12)}!9`;
     await owner.goto(recoveryLink);
     await expect(owner).toHaveURL(/\/reset-password$/);
     await owner.getByLabel('Новый пароль').fill(updatedPassword);
-    await owner.getByRole('button', { name: 'Обновить пароль' }).click();
-    await expect(owner.getByRole('status')).toContainText('Пароль обновлён.');
+    await performOwnerAction('/reset-password', () => owner.getByRole('button', { name: 'Обновить пароль' }).click());
+    await expect(owner.getByRole('status')).toContainText('Пароль обновлён.', { timeout: 15_000 });
     const passwordProbe = createClient(url, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
