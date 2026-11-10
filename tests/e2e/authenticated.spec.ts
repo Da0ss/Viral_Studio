@@ -363,8 +363,8 @@ test('two real Auth users create a project, share media/chat, and receive privat
     await owner.goto(recoveryLink);
     await expect(owner).toHaveURL(/\/reset-password$/);
     await owner.getByLabel('Новый пароль').fill(updatedPassword);
-    await owner.getByRole('button', { name: 'Обновить пароль' }).click();
-    await expect(owner.getByRole('status')).toContainText('Пароль обновлён.');
+    await performOwnerAction('/reset-password', () => owner.getByRole('button', { name: 'Обновить пароль' }).click());
+    await expect(owner.getByRole('status')).toContainText('Пароль обновлён.', { timeout: 15_000 });
     const passwordProbe = createClient(url, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
