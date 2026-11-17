@@ -108,14 +108,22 @@ export async function pollFalVideo(modelKey: string, requestPath: string, deadli
   let statusResponse: Response;
   try { statusResponse = await fetcher(`${queueOrigin}${path}/status`, { headers: { Authorization: auth }, redirect: 'error' }); }
   catch { throw new VideoProviderError('temporary'); }
-  if (!statusResponse.ok) throw new VideoProviderError(statusResponse.status >= 500 || statusResponse.status === 429 ? 'temporary' : 'invalid_result');
+  // 401/403 usually mean a rotated or revoked FAL_KEY: the request may still complete, so the
+  // worker must retry (`unconfigured`) instead of failing and charging.
+  if (!statusResponse.ok) {
+    throw new VideoProviderError(statusResponse.status === 401 || statusResponse.status === 403 ? 'unconfigured'
+      : statusResponse.status >= 500 || statusResponse.status === 429 ? 'temporary' : 'invalid_result');
+  }
   const status = await readJson(statusResponse);
   if (status.status === 'IN_QUEUE' || status.status === 'IN_PROGRESS') return { status: 'pending' };
   if (status.status !== 'COMPLETED') throw new VideoProviderError('invalid_result');
   let response: Response;
   try { response = await fetcher(`${queueOrigin}${path}`, { headers: { Authorization: auth }, redirect: 'error' }); }
   catch { throw new VideoProviderError('temporary'); }
-  if (!response.ok) throw new VideoProviderError(response.status >= 500 || response.status === 429 ? 'temporary' : 'rejected');
+  if (!response.ok) {
+    throw new VideoProviderError(response.status === 401 || response.status === 403 ? 'unconfigured'
+      : response.status >= 500 || response.status === 429 ? 'temporary' : 'rejected');
+  }
   const result = await readJson(response);
   const video = result.video as { url?: unknown } | undefined;
   const videos = result.videos as { url?: unknown }[] | undefined;

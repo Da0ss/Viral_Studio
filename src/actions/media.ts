@@ -2,8 +2,7 @@
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-
-const mediaPath = /^projects\/([0-9a-f-]{36})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}\.[a-z0-9]{1,8}$/;
+import { mediaStoragePath as mediaPath } from '@/lib/media-path';
 
 export type MediaDownloadState = { error?: string; url?: string };
 export async function prepareMediaDownload(_: MediaDownloadState, form: FormData): Promise<MediaDownloadState> {

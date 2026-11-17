@@ -6,10 +6,9 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/profile';
 import { translate } from '@/lib/i18n/messages';
 import { videoModels } from '@/lib/video-models';
+import { mediaStoragePath as mediaPath } from '@/lib/media-path';
 
 const legacyLtxModel = 'Lightricks/LTX-Video-0.9.7-distilled';
-// Same shape as the media path check in src/actions/media.ts (a 'use server' file cannot export it).
-const mediaPath = /^projects\/([0-9a-f-]{36})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}\.[a-z0-9]{1,8}$/;
 
 export default async function GenerationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

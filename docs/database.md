@@ -120,9 +120,14 @@ Rollout notes for this migration:
 
 1. Deploy the code with `GENERATION_MULTIMODEL_ENABLED=false`.
 2. Owner review of the migration.
-3. Apply it with `supabase db push` or `psql --single-transaction` (the
-   `set local lock_timeout` needs a transaction), while the scheduled workers
-   are quiet; it takes ACCESS EXCLUSIVE on `generation_jobs` briefly.
+3. Do NOT use `supabase db push` until `supabase migration repair` is done:
+   hosted migration history is squashed (10 rows vs 28 local files), so it would
+   try to re-apply most local migrations. Apply this migration after
+   `20261117120000`, individually, via the Supabase SQL editor or MCP
+   `apply_migration`, each in its own transaction (the `set local lock_timeout`
+   needs one), while the scheduled workers are quiet; it takes ACCESS EXCLUSIVE
+   on `generation_jobs` briefly. A read-only catalog check on 2026-11-17 found
+   all preconditions met.
 4. Expect transient PostgREST `PGRST202` errors until the schema cache reloads
    (`notify pgrst, 'reload schema'` if it lingers).
 5. Confirm `claim_generation_jobs` returns `provider` and `model`.

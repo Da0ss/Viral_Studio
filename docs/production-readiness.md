@@ -56,7 +56,7 @@ production until each step below is done:
 1. Deploy code with `GENERATION_MULTIMODEL_ENABLED=false`.
 2. Owner reviews migrations `20261117120000_fk_indexes_and_policy_consolidation.sql`
    and `20261118090000_multimodel_generation_jobs.sql`.
-3. Apply with `supabase db push` (or `--single-transaction`) when the cron is quiet.
+3. Do NOT use `supabase db push` until `supabase migration repair` is done: hosted migration history is squashed (10 rows vs 28 local files), so it would try to re-apply most local migrations. Instead apply `20261117120000` and then `20261118090000` individually (Supabase SQL editor or MCP `apply_migration`, each in its own transaction) while the cron is quiet. A read-only catalog check on 2026-11-17 found all preconditions met (policy shapes, CHECK constraints, function signatures, empty `generation_jobs`).
 4. Confirm `claim_generation_jobs` returns provider and model.
 5. Set `FAL_KEY`.
 6. Run one paid LTX job.

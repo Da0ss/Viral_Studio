@@ -174,3 +174,61 @@ it('keeps the allow-list in sync with the registry', () => {
   expect([...videoModelIds].sort()).toEqual(['kling', 'ltx', 'minimax', 'seedance']);
   expect(videoModels.filter((model) => model.priced).map((model) => model.id).sort()).toEqual(['ltx', 'minimax']);
 });
+
+// ---- Additional branch coverage ----
+it('rejects an oversized body before parsing', async () => {
+  const response = await call(JSON.stringify({ ...valid, prompt: 'x'.repeat(9000) }));
+  expect(response.status).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+
+it('returns 401 when auth lookup errors', async () => {
+  mocks.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: new Error('jwt') });
+  expect((await call(valid)).status).toBe(401);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+
+it('returns 403 when the organization lookup reports a non-availability error', async () => {
+  mocks.organizations.mockResolvedValue({ organizations: [], error: 'forbidden' });
+  expect((await call(valid)).status).toBe(403);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+
+it('fails closed with a generic 503 when the client cannot be created', async () => {
+  mocks.client.mockRejectedValue(new Error(`db password ${prompt}`));
+  const response = await call(valid);
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({ error: 'msg.generation.queueFailed' });
+  expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(prompt);
+  expect(mocks.after).not.toHaveBeenCalled();
+});
+
+it('accepts a single-object RPC result and defaults a missing status to queued', async () => {
+  mocks.rpc.mockResolvedValue({ data: { job_id: 'job-7', job_status: 5, was_reused: 'yes' }, error: null });
+  const response = await call(valid);
+  expect(response.status).toBe(202);
+  expect(await response.json()).toEqual({ jobId: 'job-7', status: 'queued', reused: false });
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+});
+
+it('returns unconfirmed when the RPC data is null', async () => {
+  mocks.rpc.mockResolvedValue({ data: null, error: null });
+  expect((await call(valid)).status).toBe(502);
+});
+
+it('maps an RPC error without a code using the message alone', async () => {
+  mocks.rpc.mockResolvedValue({ data: null, error: { message: 'Idempotency key conflict' } });
+  const response = await call(valid);
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ error: 'msg.generation.keyConflict' });
+});
+
+it('maps an RPC 42501 code to forbidden even when the message is opaque', async () => {
+  mocks.rpc.mockResolvedValue({ data: null, error: { message: 'denied', code: '42501' } });
+  expect((await call(valid)).status).toBe(403);
+});
+
+it('rejects a request without a trusted Origin header', async () => {
+  expect((await call(valid, null)).status).toBe(403);
+  expect(mocks.client).not.toHaveBeenCalled();
+});

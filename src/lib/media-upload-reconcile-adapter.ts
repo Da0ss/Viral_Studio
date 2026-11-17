@@ -1,7 +1,7 @@
 import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-const canonicalPath = /^projects\/([0-9a-f-]{36})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}\.[a-z0-9]{1,8}$/;
+import { mediaStoragePath as canonicalPath } from '@/lib/media-path';
 
 /** Claim one expired upload intent, remove only its reserved object, then fence the acknowledgement. */
 export async function runOneMediaUploadReconcile(deadlineAt?: number) {

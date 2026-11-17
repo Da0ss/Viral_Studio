@@ -14,7 +14,7 @@ const queued = (prefix: string, id = 'req_123') => json({
 const codeOf = async (promise: Promise<unknown>) => promise.then(() => 'ok', (error: { code?: string }) => error.code);
 
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock); vi.stubEnv('FAL_KEY', 'test-key'); });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 // Must stay identical to the seeded rows in private.generation_models (contract-multimodel.md).
 it('request path prefixes and endpoints equal the catalog seeds', () => {
@@ -151,3 +151,120 @@ it('dispatches adapters by provider and model', () => {
   expect(adapterFor('fal-ai', 'Lightricks/LTX-Video-0.9.7-distilled')?.submitAvailable()).toBe(true);
 });
 
+
+// ---- Additional branch coverage ----
+const ltxPath = '/fal-ai/ltx-video/requests/req_123';
+
+it('rejects over-long prompts and posts the per-model payload with the key and no redirects', async () => {
+  expect(await codeOf(submitFalVideo('ltx', 'x'.repeat(2001)))).toBe('rejected');
+  expect(fetchMock).not.toHaveBeenCalled();
+  for (const [key, prefix, extra] of [
+    ['ltx', '/fal-ai/ltx-video', { negative_prompt: expect.any(String) }],
+    ['kling', '/fal-ai/kling-video', { duration: '5', aspect_ratio: '16:9' }],
+    ['seedance', '/bytedance/seedance-2.0', { duration: '5', resolution: '720p', generate_audio: true }],
+  ] as const) {
+    fetchMock.mockResolvedValueOnce(queued(prefix));
+    await submitFalVideo(key, 'A slow shot of clouds', Date.now() + 60_000);
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(url).toBe(`https://queue.fal.run/${falModels[key].endpoint}`);
+    expect(init).toMatchObject({ method: 'POST', redirect: 'error' });
+    expect(init.headers.Authorization).toBe('Key test-key');
+    expect(JSON.parse(init.body)).toEqual({ prompt: 'A slow shot of clouds', ...extra });
+  }
+});
+
+it('treats credentialed, fragment or non-JSON acknowledgements of an accepted submit as uncertain', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  const bad = [
+    { request_id: 'req_1', response_url: 'https://user:pw@queue.fal.run/fal-ai/ltx-video/requests/req_1' },
+    { request_id: 'req_1', response_url: 'https://queue.fal.run/fal-ai/ltx-video/requests/req_1#frag' },
+    { request_id: 'req_1', response_url: 'not a url' },
+    { request_id: 'req_1', response_url: 42 },
+    { request_id: 42 },
+    { request_id: 'a'.repeat(101), response_url: 'https://queue.fal.run/fal-ai/ltx-video/requests/x' },
+    null,
+    'text',
+  ];
+  for (const body of bad) {
+    fetchMock.mockResolvedValueOnce(json(body));
+    expect(await codeOf(submitFalVideo('ltx', 'A slow shot of clouds'))).toBe('uncertain');
+  }
+  fetchMock.mockResolvedValueOnce(new Response('<html>', { status: 200 }));
+  expect(await codeOf(submitFalVideo('ltx', 'A slow shot of clouds'))).toBe('uncertain');
+});
+
+it('logs the request id only when it is well-formed', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  fetchMock.mockResolvedValueOnce(json({ request_id: 'req_1' }));
+  expect(await codeOf(submitFalVideo('ltx', 'A slow shot of clouds'))).toBe('uncertain');
+  expect(JSON.parse(String(warn.mock.calls[0][0]))).toMatchObject({ jobId: null, requestId: 'req_1' });
+  fetchMock.mockResolvedValueOnce(json({ request_id: 'bad id' }));
+  await codeOf(submitFalVideo('ltx', 'A slow shot of clouds'));
+  expect(warn).toHaveBeenCalledTimes(1);
+});
+
+it('maps non-refusal submit statuses to uncertain (only an explicit refusal proves nothing was accepted)', async () => {
+  for (const status of [404, 408, 409, 503, 504]) {
+    fetchMock.mockResolvedValueOnce(json({}, status));
+    expect(await codeOf(submitFalVideo('ltx', 'A slow shot of clouds'))).toBe('uncertain');
+  }
+});
+
+it('poll, cancel and path validation fail closed for unknown models and missing keys', async () => {
+  expect(await codeOf(pollFalVideo('wan', ltxPath))).toBe('invalid_result');
+  expect(await codeOf(cancelFalVideo('wan', ltxPath))).toBe('invalid_result');
+  expect(await codeOf(cancelFalVideo('ltx', '/evil/requests/x?y'))).toBe('invalid_result');
+  expect(() => validateFalRequestPath(42)).toThrow();
+  expect(validateFalRequestPath(ltxPath)).toBe(ltxPath);
+  vi.stubEnv('FAL_KEY', ' ');
+  expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('unconfigured');
+  expect(await codeOf(cancelFalVideo('ltx', ltxPath))).toBe('unconfigured');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('pins every catalog prefix: a path under another model is refused for each model', () => {
+  for (const [key, model] of Object.entries(falModels)) {
+    expect(validateFalRequestPath(`${model.requestPathPrefix}/requests/r1`, key as keyof typeof falModels)).toBeTruthy();
+    expect(() => validateFalRequestPath(`${model.requestPathPrefix}x/requests/r1`, key as keyof typeof falModels)).toThrow();
+  }
+});
+
+it('poll treats IN_QUEUE as pending, 4xx status as invalid_result, 429 as temporary', async () => {
+  fetchMock.mockResolvedValueOnce(json({ status: 'IN_QUEUE' }));
+  await expect(pollFalVideo('ltx', ltxPath, Date.now() + 60_000)).resolves.toEqual({ status: 'pending' });
+  fetchMock.mockResolvedValueOnce(json({}, 404));
+  expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('invalid_result');
+  fetchMock.mockResolvedValueOnce(json({}, 429));
+  expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('temporary');
+  fetchMock.mockResolvedValueOnce(json({ status: 'COMPLETED' })).mockResolvedValueOnce(json({}, 429));
+  expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('temporary');
+  fetchMock.mockResolvedValueOnce(json({ status: 'COMPLETED' })).mockRejectedValueOnce(new Error('network'));
+  expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('temporary');
+});
+
+it('poll maps 401/403 on status and result fetches to unconfigured so the worker retries instead of charging', async () => {
+  for (const status of [401, 403]) {
+    fetchMock.mockResolvedValueOnce(json({ detail: 'secret' }, status));
+    expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('unconfigured');
+    fetchMock.mockResolvedValueOnce(json({ status: 'COMPLETED' })).mockResolvedValueOnce(json({ detail: 'secret' }, status));
+    expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('unconfigured');
+  }
+});
+
+it('poll reads videos[0] and refuses missing, empty or non-object results', async () => {
+  fetchMock.mockResolvedValueOnce(json({ status: 'COMPLETED' })).mockResolvedValueOnce(json({ videos: [{ url: 'https://v3.fal.media/b.mp4' }] }));
+  await expect(pollFalVideo('ltx', ltxPath)).resolves.toEqual({ status: 'completed', url: 'https://v3.fal.media/b.mp4' });
+  for (const result of [{}, { videos: [] }, { video: {} }, { video: { url: 5 } }, null]) {
+    fetchMock.mockResolvedValueOnce(json({ status: 'COMPLETED' })).mockResolvedValueOnce(json(result));
+    expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('invalid_result');
+  }
+  fetchMock.mockResolvedValueOnce(json('x')).mockResolvedValueOnce(json({}));
+  expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('invalid_result');
+  fetchMock.mockResolvedValueOnce(new Response('not json', { status: 200 }));
+  expect(await codeOf(pollFalVideo('ltx', ltxPath))).toBe('invalid_result');
+});
+
+it('cancel maps network failures to temporary', async () => {
+  fetchMock.mockRejectedValueOnce(new Error('network'));
+  expect(await codeOf(cancelFalVideo('ltx', ltxPath, Date.now() + 60_000))).toBe('temporary');
+});
