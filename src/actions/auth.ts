@@ -71,7 +71,9 @@ export async function requestPasswordReset(_: AuthState, formData: FormData): Pr
   try {
     await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${getAppUrl()}/auth/callback?next=/reset-password` });
   } catch { /* Preserve the same non-enumerating response for transport failures. */ }
-  return { success: 'msg.auth.resetSent' };
+  // Redirect (outside the try/catch) instead of returning state: the PKCE verifier cookie set by
+  // resetPasswordForEmail makes Next treat this action as revalidating, which left useActionState pending.
+  redirect('/forgot-password?sent=1' as Route);
 }
 
 export async function updatePassword(_: AuthState, formData: FormData): Promise<AuthState> {
