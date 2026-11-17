@@ -355,8 +355,8 @@ test('two real Auth users create a project, share media/chat, and receive privat
     stage('media deletion and password recovery');
     await owner.goto('/forgot-password');
     await owner.getByLabel('Email').fill(ownerEmail!);
-    // A server-action redirect answers 303 with x-action-redirect (no Location); the client router navigates.
-    const resetResponse = await performOwnerAction('/forgot-password', () => owner.getByRole('button', { name: 'Отправить ссылку' }).click(), 303);
+    // Since Next 16.4 a fetch-action redirect answers 200 with x-action-redirect (no Location); the client router navigates.
+    const resetResponse = await performOwnerAction('/forgot-password', () => owner.getByRole('button', { name: 'Отправить ссылку' }).click());
     expect(resetResponse.headers()['x-action-redirect']).toContain('/forgot-password?sent=1');
     await expect(owner).toHaveURL(/\/forgot-password\?sent=1$/);
     await expect(owner.getByRole('status')).toContainText('Если аккаунт существует', { timeout: 15_000 });
