@@ -1,157 +1,93 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
+import { z } from 'zod';
+import { createClient } from '@/lib/supabase/server';
+import { getOrganizationsResult } from '@/lib/projects';
+import { hasTrustedOrigin } from '@/lib/request-origin';
+import { advanceGenerationJob } from '@/lib/generation-worker';
+import { safeError } from '@/lib/generation-errors';
+import { videoModelIds, videoModels, videoPromptLimits } from '@/lib/video-models';
 
-interface ModelConfig {
-  endpoint: string;
-  preparePayload: (prompt: string) => Record<string, any>;
+export const runtime = 'nodejs';
+export const maxDuration = 120;
+
+// Enqueue endpoint: creates a durable generation job (budget reservation + idempotency are enforced
+// by the create_generation_job RPC under the caller's JWT) and returns immediately. The first worker
+// step runs after the response; the status page / cron workers continue the job.
+const headers = { 'Cache-Control': 'private, no-store' };
+const fail = (error: string, status: number) => NextResponse.json({ error }, { status, headers });
+const bodySchema = z.strictObject({
+  prompt: z.string().trim().min(videoPromptLimits.min).max(videoPromptLimits.max),
+  model: z.enum(videoModelIds),
+  projectId: z.string().uuid(),
+  requestId: z.string().uuid(),
+});
+const maxBodyChars = 8_000;
+
+function statusFor(code: string) {
+  if (code === 'msg.generation.budgetExhausted' || code === 'msg.generation.personalLimit' || code === 'msg.generation.quota') return 429;
+  if (code === 'msg.generation.forbidden') return 403;
+  if (code === 'msg.generation.keyConflict') return 409;
+  if (code === 'msg.generation.modelUnavailable') return 400;
+  return 502;
 }
 
-// Реестр моделей: от бюджетных до супер-флагманов
-const MODEL_REGISTRY: Record<string, ModelConfig> = {
-  // 1. Ультрабыстрый черновик (~$0.02)
-  'ltx': {
-    endpoint: 'fal-ai/ltx-video',
-    preparePayload: (prompt) => ({
-      prompt,
-      negative_prompt: 'low quality, blurry, deformed, distorted',
-    }),
-  },
-  // 2. Детализированная геометрия (~$0.40)
-  'wan': {
-    endpoint: 'fal-ai/wan-t2v',
-    preparePayload: (prompt) => ({
-      prompt,
-      resolution: '720p',
-      aspect_ratio: '16:9',
-    }),
-  },
-  // 3. Кинематографичный свет от Tencent (~$0.30)
-  'hunyuan': {
-    endpoint: 'fal-ai/hunyuan-video',
-    preparePayload: (prompt) => ({
-      prompt,
-      resolution: '720p',
-      aspect_ratio: '16:9',
-    }),
-  },
-  // 4. Фотореализм людей и органики (~$0.50)
-  'minimax': {
-    endpoint: 'fal-ai/minimax/video-01',
-    preparePayload: (prompt) => ({
-      prompt,
-    }),
-  },
-  // 5. Консистентность персонажей и физика (~$0.60)
-  'kling': {
-    endpoint: 'fal-ai/kling-video/v3/standard/text-to-video',
-    preparePayload: (prompt) => ({
-      prompt,
-      duration: '5',
-      aspect_ratio: '16:9',
-    }),
-  },
-  // 6. Тяжелый флагман с нативным звуком (~$1.20)
-  'seedance': {
-    endpoint: 'bytedance/seedance-2.0/text-to-video',
-    preparePayload: (prompt) => ({
-      prompt,
-      duration: 5,
-      resolution: '720p',
-      generate_audio: true, // Включение встроенного саундтрека
-    }),
-  },
-};
+export async function POST(request: Request) {
+  // Fail closed: both the shared generation flag and the multi-model flag must be on.
+  if (process.env.GENERATION_ENABLED !== 'true' || process.env.GENERATION_MULTIMODEL_ENABLED !== 'true') {
+    return fail('msg.generation.disabled', 503);
+  }
+  if (!hasTrustedOrigin(request)) return fail('msg.generation.forbidden', 403);
 
-function resolveModelConfig(modelName: string): ModelConfig {
-  const lower = modelName.toLowerCase();
-  if (lower.includes('seedance')) return MODEL_REGISTRY['seedance'];
-  if (lower.includes('kling')) return MODEL_REGISTRY['kling'];
-  if (lower.includes('minimax') || lower.includes('hailuo')) return MODEL_REGISTRY['minimax'];
-  if (lower.includes('wan')) return MODEL_REGISTRY['wan'];
-  if (lower.includes('hunyuan')) return MODEL_REGISTRY['hunyuan'];
-  return MODEL_REGISTRY['ltx'];
-}
-
-export async function POST(req: Request) {
   try {
-    const { prompt, model = 'LTX-Video' } = await req.json().catch(() => ({}));
+    const supabase = await createClient({ requestTimeoutMs: 8_000 });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return fail('msg.auth.sessionExpired', 401);
 
-    if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 3) {
-      return NextResponse.json({ error: 'Промпт должен содержать от 3 символов' }, { status: 400 });
+    let raw: unknown;
+    try {
+      const text = await request.text();
+      if (text.length > maxBodyChars) return fail('msg.generation.checkInput', 400);
+      raw = JSON.parse(text);
+    } catch { return fail('msg.generation.checkInput', 400); }
+    const parsed = bodySchema.safeParse(raw);
+    if (!parsed.success) return fail('msg.generation.checkInput', 400);
+    const { prompt, model, projectId, requestId } = parsed.data;
+
+    const organizations = await getOrganizationsResult(user.id);
+    if (organizations.error === 'unavailable') return fail('msg.generation.queueFailed', 503);
+    if (organizations.error || !organizations.organizations.length) return fail('msg.generation.forbidden', 403);
+
+    // The `priced` flag intentionally duplicates the DB catalog and fails closed: enabling a model via
+    // set_generation_model_price also requires flipping `priced` in video-models.ts.
+    if (!videoModels.find((entry) => entry.id === model)?.priced) return fail('msg.generation.modelUnavailable', 400);
+
+    const { data, error } = await supabase.rpc('create_generation_job', {
+      target_project: projectId, request_key: requestId, generation_prompt: prompt, model_key: model,
+    });
+    if (error) {
+      const code = safeError(`${error.message} ${error.code ?? ''}`);
+      console.error('[generate-video] enqueue failed', { model, code });
+      return fail(code, statusFor(code));
     }
+    const job = Array.isArray(data) ? data[0] : data;
+    if (!job?.job_id) return fail('msg.generation.queueUnconfirmed', 502);
+    const jobId = String(job.job_id);
 
-    const apiKey = process.env.FAL_KEY?.trim();
-    if (!apiKey) {
-      return NextResponse.json({
-        error: 'Переменная FAL_KEY не найдена в окружении (.env.local / Vercel)'
-      }, { status: 500 });
-    }
-
-    const config = resolveModelConfig(model);
-    console.log(`[Fal.ai Orchestrator] Запуск: ${config.endpoint} | Модель: ${model}`);
-
-    // 1. Постановка в асинхронную очередь
-    const submitRes = await fetch(`https://queue.fal.run/${config.endpoint}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Key ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(config.preparePayload(prompt.trim())),
+    after(async () => {
+      try {
+        await advanceGenerationJob(jobId, user.id);
+      } catch {
+        console.error('[generate-video] background advance failed', { jobId, model });
+      }
     });
 
-    const submitData = await submitRes.json();
-    console.log('[Fal.ai Queue Submit]:', submitData);
-
-    if (!submitRes.ok) {
-      const err = submitData?.detail || submitData?.message || JSON.stringify(submitData);
-      return NextResponse.json({ error: `Fal.ai отклонил задачу: ${err}` }, { status: 502 });
-    }
-
-    const requestId = submitData.request_id;
-    const statusUrl = submitData.status_url || `https://queue.fal.run/${config.endpoint}/requests/${requestId}/status`;
-    const responseUrl = submitData.response_url || `https://queue.fal.run/${config.endpoint}/requests/${requestId}`;
-
-    // 2. Пуллинг статуса (до 3 минут, тяжелые модели рендерятся дольше)
-    for (let i = 0; i < 45; i++) {
-      await new Promise((r) => setTimeout(r, 4000));
-
-      const statusRes = await fetch(statusUrl, {
-        headers: { Authorization: `Key ${apiKey}` },
-      });
-      const statusData = await statusRes.json();
-      console.log(`[Fal.ai Polling ${i + 1}/45] Статус: ${statusData?.status}`);
-
-      if (statusData?.status === 'COMPLETED') {
-        const resultRes = await fetch(responseUrl, {
-          headers: { Authorization: `Key ${apiKey}` },
-        });
-        const resultData = await resultRes.json();
-
-        const videoUrl =
-          resultData?.video?.url ||
-          resultData?.videos?.[0]?.url ||
-          resultData?.payload?.video?.url;
-
-        if (videoUrl) {
-          return NextResponse.json({
-            videoUrl,
-            model,
-            prompt: prompt.trim(),
-          });
-        }
-      }
-
-      if (statusData?.status === 'FAILED') {
-        return NextResponse.json({
-          error: `Ошибка вычислений: ${statusData?.error || 'Сбой кластера Fal.ai'}`
-        }, { status: 500 });
-      }
-    }
-
-    return NextResponse.json({ error: 'Таймаут генерации (превышено 3 минуты)' }, { status: 504 });
-
-  } catch (err: any) {
-    console.error('[Server Crash]:', err);
-    return NextResponse.json({ error: `Внутренний сбой сервера: ${err.message}` }, { status: 500 });
+    return NextResponse.json({
+      jobId,
+      status: typeof job.job_status === 'string' ? job.job_status : 'queued',
+      reused: job.was_reused === true,
+    }, { status: 202, headers });
+  } catch {
+    console.error('[generate-video] unexpected failure');
+    return fail('msg.generation.queueFailed', 503);
   }
 }

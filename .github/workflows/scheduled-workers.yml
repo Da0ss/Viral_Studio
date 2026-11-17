@@ -1,0 +1,63 @@
+name: Scheduled workers
+
+# External scheduler for GET /api/internal/workers (Vercel Hobby cron is daily only).
+# Harmless until the CRON_SECRET secret and WORKERS_URL variable are configured.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: scheduled-workers
+  cancel-in-progress: false
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Invoke worker endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          WORKERS_URL: ${{ vars.WORKERS_URL }}
+        run: |
+          set -u
+          if [ -z "${CRON_SECRET}" ] || [ -z "${WORKERS_URL}" ]; then
+            echo "::notice::CRON_SECRET secret or WORKERS_URL variable is not set; skipping."
+            exit 0
+          fi
+          if ! printf '%s' "${WORKERS_URL}" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]+)?/api/internal/workers$'; then
+            echo "::error::WORKERS_URL must be https://<host>[:port]/api/internal/workers"
+            exit 1
+          fi
+
+          body="$(mktemp)"
+          code="$(printf 'Authorization: Bearer %s\n' "${CRON_SECRET}" | curl -sS -m 150 --proto '=https' \
+            -H @- \
+            -o "${body}" -w '%{http_code}' \
+            "${WORKERS_URL}")" || { echo "::error::Request to workers endpoint failed"; exit 1; }
+
+          echo "HTTP ${code}"
+          # Responses contain only aggregate counts / generic errors (no secrets).
+          head -c 2000 "${body}"; echo
+
+          case "${code}" in
+            2??) exit 0 ;;
+            503)
+              # 503 is also returned for failed items and for a misconfigured secret,
+              # so only the explicit "all queues disabled" response counts as success.
+              if grep -q '"Workers disabled"' "${body}"; then
+                echo "::notice::All worker queues are disabled on the server; nothing to do."
+                exit 0
+              fi
+              echo "::error::Workers endpoint returned 503 (failed items or unavailable)"
+              exit 1
+              ;;
+            *)
+              echo "::error::Workers endpoint returned HTTP ${code}"
+              exit 1
+              ;;
+          esac

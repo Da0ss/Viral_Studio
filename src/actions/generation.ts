@@ -2,17 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { safeError } from '@/lib/generation-errors';
 
 export type GenerationActionState = { error?: string; jobId?: string };
-
-function safeError(message: string) {
-  if (message.includes('budget exhausted')) return 'msg.generation.budgetExhausted';
-  if (message.includes('Personal daily generation limit')) return 'msg.generation.personalLimit';
-  if (message.includes('media quota')) return 'msg.generation.quota';
-  if (message.includes('forbidden') || message.includes('42501')) return 'msg.generation.forbidden';
-  if (message.includes('Idempotency key conflict')) return 'msg.generation.keyConflict';
-  return 'msg.generation.queueFailed';
-}
 
 export async function submitGeneration(_: GenerationActionState, form: FormData): Promise<GenerationActionState> {
   if (process.env.GENERATION_ENABLED !== 'true') return { error: 'msg.generation.disabled' };

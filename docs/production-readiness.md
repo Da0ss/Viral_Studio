@@ -1,5 +1,7 @@
 # Production readiness: NOT APPROVED
 
+Latest audit and task list: [audit-2026-11-17.md](audit-2026-11-17.md).
+
 This is a current worktree inventory, not a deployment certificate. Latest
 root checkpoint on 2026-10-06: 236 full-suite unit/component cases passed.
 All 25 migrations and
@@ -38,13 +40,32 @@ checks, not authenticated application acceptance. Hosted CI has not been run.
 | Profile persistence | Action/component/CAS cases pass; real browser refresh and cross-tab acceptance pending |
 | Project filters | Implementation/unit checks exist; authenticated browser acceptance pending |
 | Chat Realtime | Mock reconnect/dedup cases pass; actual two-user/offline verification pending |
-| Generation jobs | HF adapter, durable worker/UI/API and local tests exist; real provider/deployment acceptance pending |
+| Generation jobs | Durable multi-model jobs (Fal LTX/MiniMax, per-model budget reservation, `/create` UI) exist locally with PGlite and mock tests; migration not applied to hosted; no paid provider acceptance; HF path kept by owner decision |
 | Mobile / console / images / overflow | Guest auth pages checked; private rendered surfaces pending |
 | Secrets | Only .env.example tracked; env ignore rules present; client-secret check has limited static-bundle scope; full history/SSR scan pending |
 | Production build | Local compilation passes; no staging/production deployment verified |
 | Safe errors / action auth | Guards and generic errors exist; not a completed exhaustive security audit |
 | Private Storage | Hosted avatars + project-media verified private; new upload-intent migration and HTTP acceptance pending |
 | Background jobs | No deployed generation, cleanup or notification-delivery worker |
+
+## Generation rollout order (2026-11-17, not started)
+
+Code is uncommitted on `fix/p0-generation-hardening`. Generation stays off in
+production until each step below is done:
+
+1. Deploy code with `GENERATION_MULTIMODEL_ENABLED=false`.
+2. Owner reviews migrations `20261117120000_fk_indexes_and_policy_consolidation.sql`
+   and `20261118090000_multimodel_generation_jobs.sql`.
+3. Apply with `supabase db push` (or `--single-transaction`) when the cron is quiet.
+4. Confirm `claim_generation_jobs` returns provider and model.
+5. Set `FAL_KEY`.
+6. Run one paid LTX job.
+7. Set `GENERATION_MULTIMODEL_ENABLED=true`.
+
+Before enabling kling or seedance, confirm Fal prices on the invoice, raise the
+per-user daily limit (default $0.50), run `set_generation_model_price`, and flip
+`priced` in `src/lib/video-models.ts`. Verify real Fal `response_url` prefixes on
+staging for each model.
 
 ## Remaining completion order
 

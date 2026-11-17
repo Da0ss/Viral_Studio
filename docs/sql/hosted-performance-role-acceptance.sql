@@ -3,9 +3,11 @@
 -- profiles, and membership rows, and can SET ROLE authenticated. This script
 -- writes only organization_members/project_members inside this transaction;
 -- ROLLBACK removes those changes. It never changes auth.users or profiles.
--- Run once before and once after the performance migration. The policy checks
--- intentionally accept either spelling of auth.uid() while requiring the
--- same policy roles, command, permissive mode, and owner helper calls.
+-- Expects the state AFTER migration 20261117120000 (consolidated SELECT policy
+-- plus owner INSERT/UPDATE/DELETE policies; 11 FK covering indexes). It will
+-- fail on the pre-migration FOR ALL policy shape by design. The behavioural
+-- checks below (owner manages, admin/editor/viewer read-only, outsider no
+-- access) are unchanged and hold both before and after.
 
 begin;
 set local lock_timeout = '2s';
@@ -17,10 +19,8 @@ declare
   selected_project_id uuid;
   selected_owner_id uuid;
   selected_second_user_id uuid;
-  owner_policy_count integer;
-  project_policy_count integer;
-  owner_policy record;
-  project_policy record;
+  t record;
+  pol record;
 begin
   -- Select one owner of both an organization and a project in that
   -- organization, plus a distinct confirmed account with a profile and no
@@ -72,43 +72,77 @@ begin
   perform set_config('performance_acceptance.owner_id', selected_owner_id::text, true);
   perform set_config('performance_acceptance.second_user_id', selected_second_user_id::text, true);
 
-  select count(*) into owner_policy_count
-  from pg_catalog.pg_policies
-  where schemaname = 'public' and tablename = 'organization_members'
-    and policyname = 'organization_members: owners manage members';
-  select count(*) into project_policy_count
-  from pg_catalog.pg_policies
-  where schemaname = 'public' and tablename = 'project_members'
-    and policyname = 'project_members: project owners manage';
-  if owner_policy_count <> 1 or project_policy_count <> 1 then
-    raise exception 'Expected exactly one owner-management policy on each membership table';
-  end if;
-
-  select * into owner_policy from pg_catalog.pg_policies
-  where schemaname = 'public' and tablename = 'organization_members'
-    and policyname = 'organization_members: owners manage members';
-  select * into project_policy from pg_catalog.pg_policies
-  where schemaname = 'public' and tablename = 'project_members'
-    and policyname = 'project_members: project owners manage';
-
-  if owner_policy.permissive is distinct from 'PERMISSIVE'
-    or owner_policy.roles is distinct from array['authenticated']::name[]
-    or owner_policy.cmd is distinct from 'ALL'
-    or coalesce(owner_policy.qual like '%is_organization_owner%auth.uid()%', false) is not true
-    or coalesce(owner_policy.with_check like '%is_organization_owner%auth.uid()%', false) is not true
-  then raise exception 'Organization owner policy semantics or raw expression changed'; end if;
-
-  if project_policy.permissive is distinct from 'PERMISSIVE'
-    or project_policy.roles is distinct from array['authenticated']::name[]
-    or project_policy.cmd is distinct from 'ALL'
-    or coalesce(project_policy.qual like '%is_project_owner%auth.uid()%', false) is not true
-    or coalesce(project_policy.with_check like '%is_project_owner%auth.uid()%', false) is not true
-  then raise exception 'Project owner policy semantics or raw expression changed'; end if;
-
-  raise notice 'Organization owner policy raw qual/check: % / %', owner_policy.qual, owner_policy.with_check;
-  raise notice 'Project owner policy raw qual/check: % / %', project_policy.qual, project_policy.with_check;
+  -- Consolidated membership policies (migration 20261117120000): exactly one
+  -- permissive authenticated-only policy per command, no FOR ALL policy.
+  -- Exact (whitespace-stripped) predicate comparison, as in the migration.
+  if (select count(*) from pg_catalog.pg_policies where schemaname='public'
+        and tablename in ('organization_members','project_members')) is distinct from 8::bigint
+  then raise exception 'Expected exactly 8 policies on the membership tables'; end if;
+  for t in select * from (values
+    ('organization_members'::text,'organization_members: read'::text,'SELECT'::text,
+      '((user_id=(SELECTauth.uid()ASuid))OR(SELECTprivate.can_manage_organization_team(organization_members.organization_id)AScan_manage_organization_team)ORprivate.is_organization_owner(organization_id,(SELECTauth.uid()ASuid)))'::text,
+      null::text),
+    ('organization_members','organization_members: owners insert','INSERT',null,
+      'private.is_organization_owner(organization_id,(SELECTauth.uid()ASuid))'),
+    ('organization_members','organization_members: owners update','UPDATE',
+      'private.is_organization_owner(organization_id,(SELECTauth.uid()ASuid))',
+      'private.is_organization_owner(organization_id,(SELECTauth.uid()ASuid))'),
+    ('organization_members','organization_members: owners delete','DELETE',
+      'private.is_organization_owner(organization_id,(SELECTauth.uid()ASuid))',null),
+    ('project_members','project_members: read','SELECT',
+      '((SELECTprivate.can_read_project_members(project_members.project_id)AScan_read_project_members)ORprivate.is_project_owner(project_id,(SELECTauth.uid()ASuid)))',
+      null),
+    ('project_members','project_members: owners insert','INSERT',null,
+      'private.is_project_owner(project_id,(SELECTauth.uid()ASuid))'),
+    ('project_members','project_members: owners update','UPDATE',
+      'private.is_project_owner(project_id,(SELECTauth.uid()ASuid))',
+      'private.is_project_owner(project_id,(SELECTauth.uid()ASuid))'),
+    ('project_members','project_members: owners delete','DELETE',
+      'private.is_project_owner(project_id,(SELECTauth.uid()ASuid))',null)
+  ) v(table_name,policy_name,expected_cmd,expected_qual,expected_check) loop
+    select * into pol from pg_catalog.pg_policies
+      where schemaname='public' and tablename=t.table_name and policyname=t.policy_name;
+    if not found or pol.permissive is distinct from 'PERMISSIVE'
+      or pol.cmd is distinct from t.expected_cmd
+      or pol.roles is distinct from array['authenticated']::name[]
+    then raise exception 'Unexpected policy metadata for %.%',t.table_name,t.policy_name; end if;
+    if pg_catalog.regexp_replace(pol.qual,'[[:space:]]+','','g') is distinct from t.expected_qual
+      or pg_catalog.regexp_replace(pol.with_check,'[[:space:]]+','','g') is distinct from t.expected_check
+    then raise exception 'Unexpected policy expression for %.%',t.table_name,t.policy_name; end if;
+  end loop;
 end
 $$;
+
+-- All 11 foreign-key covering indexes (3 earlier + 8 from migration
+-- 20261117120000) must exist as full, valid, ready B-tree prefix indexes.
+do $$ declare t record; begin
+  for t in select * from (values
+    ('private'::text,'generation_output_reservations'::text,'project_id'::text,'generation_output_reservations_project_id_idx'::text),
+    ('public','team_invitations','invited_by','team_invitations_invited_by_idx'),
+    ('public','team_invitations','project_id','team_invitations_project_id_idx'),
+    ('public','asset_versions','created_by','asset_versions_created_by_idx'),
+    ('public','assets','created_by','assets_created_by_idx'),
+    ('public','audit_log','actor_id','audit_log_actor_id_idx'),
+    ('public','messages','parent_message_id','messages_parent_message_id_idx'),
+    ('public','messages','sender_id','messages_sender_id_idx'),
+    ('public','notifications','project_id','notifications_project_id_idx'),
+    ('public','organizations','created_by','organizations_created_by_idx'),
+    ('public','projects','created_by','projects_created_by_idx')
+  ) v(schema_name,table_name,column_name,index_name) loop
+    if not exists(select 1 from pg_catalog.pg_class table_class
+      join pg_catalog.pg_namespace table_namespace on table_namespace.oid=table_class.relnamespace
+      join pg_catalog.pg_index index_catalog on index_catalog.indrelid=table_class.oid
+      join pg_catalog.pg_class index_class on index_class.oid=index_catalog.indexrelid
+      join pg_catalog.pg_am access_method on access_method.oid=index_class.relam
+      join pg_catalog.pg_attribute attribute on attribute.attrelid=table_class.oid
+        and attribute.attnum=(index_catalog.indkey::smallint[])[0]
+      where table_namespace.nspname=t.schema_name and table_class.relname=t.table_name
+        and index_class.relname=t.index_name
+        and attribute.attname=t.column_name and index_catalog.indisvalid and index_catalog.indisready
+        and index_catalog.indpred is null and access_method.amname='btree')
+    then raise exception 'Missing full ready B-tree index % on %.%(%)',t.index_name,t.schema_name,t.table_name,t.column_name; end if;
+  end loop;
+end $$;
 
 -- Create only temporary organization-admin/project-editor fixtures for the
 -- already existing second user. These rows are removed by the final rollback.
@@ -135,6 +169,7 @@ declare
   v_project_id uuid := current_setting('performance_acceptance.project_id')::uuid;
   v_second_user_id uuid := current_setting('performance_acceptance.second_user_id')::uuid;
 begin
+  perform set_config('request.jwt.claim.sub', '', true);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', v_owner_id)::text, true);
   update public.organization_members set updated_at = updated_at
   where organization_members.organization_id = v_organization_id
@@ -151,7 +186,7 @@ end
 $$;
 
 -- Organization admin and project editor can read their rosters but cannot
--- update the owner's membership row through the owner-only ALL policies.
+-- update the owner's membership row through the per-command owner UPDATE policies.
 do $$
 declare
   affected integer;
@@ -160,6 +195,7 @@ declare
   v_project_id uuid := current_setting('performance_acceptance.project_id')::uuid;
   v_second_user_id uuid := current_setting('performance_acceptance.second_user_id')::uuid;
 begin
+  perform set_config('request.jwt.claim.sub', '', true);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', v_second_user_id)::text, true);
   if not exists (select 1 from public.organization_members om
     where om.organization_id = v_organization_id and om.user_id = v_owner_id) then
@@ -200,6 +236,7 @@ declare
   v_project_id uuid := current_setting('performance_acceptance.project_id')::uuid;
   v_second_user_id uuid := current_setting('performance_acceptance.second_user_id')::uuid;
 begin
+  perform set_config('request.jwt.claim.sub', '', true);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', v_second_user_id)::text, true);
   if not exists (select 1 from public.project_members pm
     where pm.project_id = v_project_id and pm.user_id = v_owner_id) then
@@ -231,6 +268,7 @@ declare
   v_project_id uuid := current_setting('performance_acceptance.project_id')::uuid;
   v_outsider_id uuid := current_setting('performance_acceptance.second_user_id')::uuid;
 begin
+  perform set_config('request.jwt.claim.sub', '', true);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', v_outsider_id)::text, true);
   if exists (select 1 from public.organization_members om
     where om.organization_id = v_organization_id) then

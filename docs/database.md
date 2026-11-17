@@ -72,6 +72,62 @@ The profile’s email is synchronized from `auth.users` by a restricted trigger.
 
 The two owner-membership checks are `SECURITY DEFINER` functions only because querying a membership table from its own policy would recurse indefinitely. They reside in the non-exposed `private` schema, use a fixed `search_path`, have `PUBLIC` execution revoked, and are granted only to `authenticated` for use inside RLS policies.
 
+## Generation model catalog and pricing
+
+`20261118090000_multimodel_generation_jobs.sql` (local only, not applied to any
+hosted database) makes generation multi-model:
+
+- `private.generation_models` is the catalog: `model_key` (primary key),
+  `provider` (`fal-ai` legacy Hugging Face router, or `fal`), `endpoint`,
+  `request_path_prefix` (the first path segments of the provider's queue
+  `response_url`), `cost_micro_usd` (1..5,000,000, or NULL = unpriced) and
+  `enabled` (default false; enabling requires a price). RLS is on and every
+  client role is revoked: only `service_role` reads or writes it, and clients
+  never see prices. Seeds: legacy `Lightricks/LTX-Video-0.9.7-distilled`
+  (50,000, enabled), `ltx` and `minimax` (50,000, enabled), `kling` and
+  `seedance` (unpriced, disabled).
+- `generation_jobs.provider`/`model` now reference the catalog through a
+  composite foreign key (the former single-model CHECKs are dropped by a
+  fail-closed constraint lookup). `reservation_micro_usd` and
+  `charged_micro_usd` allow 0..5,000,000; `provider_request_path` accepts any
+  `/seg/seg[/seg[/seg]]/requests/<id>` shape. Participants may additionally
+  select `model`; `provider` and `provider_request_*` stay hidden.
+- `provider_request_id` stores the id from `provider_request_path` (backfilled)
+  with a consistency CHECK and a partial unique index on `provider_request_id`
+  alone (`fal-ai` and `fal` share Fal's id space). Use it to reconcile with the
+  provider.
+- `authorize_generation_dispatch` closes a not-yet-submitted job without charge
+  (`failed`, `last_error_code = 'model_disabled'`) when its catalog row is
+  disabled and returns false; submitted jobs keep finishing.
+- `public.create_generation_job(target_project, request_key, generation_prompt, model_key)`
+  (security invoker, `authenticated`) reserves the catalog price for the chosen
+  model. Unknown, disabled or unpriced models fail with
+  `Generation model unavailable` (SQLSTATE 22023). Replaying a key returns the
+  existing job even if the model has since been disabled; a key reused with a
+  different model, project or prompt is an idempotency conflict (23505). The
+  3-argument overload is unchanged and always uses the legacy model.
+- `claim_generation_jobs(integer)` and `claim_generation_job_for_view(uuid, uuid)`
+  additionally return `provider` and `model`. `record_generation_submission`
+  and `reconcile_generation_submission` require the path to start with the
+  job's catalog `request_path_prefix || '/requests/'`.
+- `public.set_generation_model_price(model_key, cost_micro_usd, enabled)`
+  (`service_role` only) changes a price and the enabled flag; price changes
+  never alter reservations already taken. Example:
+  `select public.set_generation_model_price('kling', 70000, true);`
+- Acceptance: `supabase/tests/multimodel_generation_acceptance.sql`.
+
+Rollout notes for this migration:
+
+1. Deploy the code with `GENERATION_MULTIMODEL_ENABLED=false`.
+2. Owner review of the migration.
+3. Apply it with `supabase db push` or `psql --single-transaction` (the
+   `set local lock_timeout` needs a transaction), while the scheduled workers
+   are quiet; it takes ACCESS EXCLUSIVE on `generation_jobs` briefly.
+4. Expect transient PostgREST `PGRST202` errors until the schema cache reloads
+   (`notify pgrst, 'reload schema'` if it lingers).
+5. Confirm `claim_generation_jobs` returns `provider` and `model`.
+6. Set `FAL_KEY`, then set `GENERATION_MULTIMODEL_ENABLED=true`.
+
 ## Applying and testing
 
 The PGlite runner discovers and applies every local migration SQL file in
