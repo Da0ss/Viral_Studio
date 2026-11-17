@@ -127,13 +127,13 @@ test('two real Auth users create a project, share media/chat, and receive privat
     }
   });
   const stage = (name: string) => console.info(`[auth-e2e] ${testInfo.project.name}: ${name}`);
-  const performOwnerAction = async (path: string, click: () => Promise<void>) => {
+  const performOwnerAction = async (path: string, click: () => Promise<void>, expectedStatus = 200) => {
     const [response] = await Promise.all([owner.waitForResponse(response =>
       new URL(response.url()).pathname === path && response.request().method() === 'POST' &&
       Boolean(response.request().headers()['next-action'])), click()]);
-    expect(response.status()).toBe(200);
+    expect(response.status()).toBe(expectedStatus);
     // The caller waits for the resulting success message or navigation below.
-
+    return response;
   };
   const logDialogGeometry = async (phase: string) => {
     const geometry = await owner.evaluate(() => {
@@ -355,7 +355,10 @@ test('two real Auth users create a project, share media/chat, and receive privat
     stage('media deletion and password recovery');
     await owner.goto('/forgot-password');
     await owner.getByLabel('Email').fill(ownerEmail!);
-    await performOwnerAction('/forgot-password', () => owner.getByRole('button', { name: 'Отправить ссылку' }).click());
+    // Since Next 16.4 a fetch-action redirect answers 200 with x-action-redirect (no Location); the client router navigates.
+    const resetResponse = await performOwnerAction('/forgot-password', () => owner.getByRole('button', { name: 'Отправить ссылку' }).click());
+    expect(resetResponse.headers()['x-action-redirect']).toContain('/forgot-password?sent=1');
+    await expect(owner).toHaveURL(/\/forgot-password\?sent=1$/);
     await expect(owner.getByRole('status')).toContainText('Если аккаунт существует', { timeout: 15_000 });
     const recoveryLink = await waitForRecoveryLink(ownerEmail!, new URL(url!).origin);
     const updatedPassword = `Recovered-${fixtureId.slice(0, 12)}!9`;

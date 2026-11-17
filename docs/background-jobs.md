@@ -128,6 +128,57 @@ generation detail page can also advance eligible jobs while viewed. Hosted
 service checks, monitoring and provider-backed acceptance remain required.
 No paid generation is certified by local mocks or PGlite.
 
+## Scheduler: GitHub Actions every 10 minutes
+
+Decision: Vercel Hobby Cron runs at most once per day, which is too slow for
+generation polling. The primary scheduler is the GitHub Actions workflow
+`.github/workflows/scheduled-workers.yml`, which calls
+`GET /api/internal/workers` on production every 10 minutes. The daily Vercel cron
+in `vercel.json` stays as a fallback.
+
+Setup:
+
+1. Repository secret `CRON_SECRET`: the same 64-character lowercase hex value as
+   the `CRON_SECRET` environment variable in Vercel (GitHub repo Settings →
+   Secrets and variables → Actions → Secrets). Never put it in a variable or in
+   the repo.
+2. Repository variable `WORKERS_URL`: the full production URL, for example
+   `https://<production-domain>/api/internal/workers` (GitHub repo Settings →
+   Secrets and variables → Actions → Variables). It must match
+   `https://<host>[:port]/api/internal/workers` exactly, with no query,
+   fragment or userinfo; anything else fails the run.
+3. Manual run: Actions tab, "Scheduled workers", "Run workflow"
+   (`workflow_dispatch`). The run log shows the HTTP status and the aggregate
+   JSON counts only.
+
+Until both values exist the workflow prints a notice and exits successfully. An
+HTTP 503 with "Workers disabled" (all `*_ENABLED` flags off) is also treated as
+success; any other 503 (failed items, misconfigured secret), 401 or other
+non-2xx status fails the run. This is intentional alerting: while items keep
+failing (503), every 10-minute run fails and GitHub emails the maintainers on
+each failed scheduled run until the cause is fixed.
+
+Limitations (see GitHub docs, "Events that trigger workflows",
+https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows):
+
+- Scheduled runs can be delayed or dropped during periods of high load, so the
+  10-minute cadence is best effort, not a guarantee.
+- The shortest allowed interval is 5 minutes.
+- Scheduled workflows run only from the default branch; the workflow has no
+  effect until merged there.
+- In public repositories, scheduled workflows are automatically disabled after
+  60 days without repository activity and must be re-enabled manually.
+
+Concurrency safety: the endpoint is safe to call concurrently (for example a
+delayed scheduled run overlapping a manual run or the Vercel fallback). It is
+not idempotent by itself; safety comes from the queues: cleanup and upload
+reconciliation claim items with SKIP LOCKED, a time-limited lease and a fresh
+fencing token, and generation uses fenced claims with an `uncertain` state for
+ambiguous paid submissions. Two overlapping calls therefore claim different
+items or none. The workflow also uses a `concurrency` group so its own runs do
+not overlap, and each run is capped at 5 minutes while the endpoint stops
+admitting work after 100 seconds.
+
 `GET /api/internal/worker-metrics` is an optional read-only alerting endpoint.
 It uses the same bearer `CRON_SECRET` and requires
 `WORKER_METRICS_ENABLED=true`. The service-role-only RPC returns queue depth,
@@ -138,3 +189,14 @@ cleanup state for uploads, and repeated provider polling for generation. Poll
 it from the external scheduler or monitoring system to alert
 on sustained ready backlog, oldest-ready age, uncertain generations, or low
 remaining daily budget. The endpoint is no-store and returns generic errors.
+
+## Generation dispatch to Fal (2026-11-17, not deployed)
+
+The same `GET /api/internal/workers` run dispatches generation jobs. Submission to
+Fal happens only when `GENERATION_MULTIMODEL_ENABLED=true` and `FAL_KEY` is set;
+otherwise queued jobs wait. Fal 429 responses mean no charge. An uncertain
+acknowledgement is logged with the Fal request id and is not resubmitted. Queued
+jobs for models disabled in the catalog are closed without charge. When claim rows
+lack provider/model (migration not yet applied), the worker falls back to the legacy
+provider/model path. Rollout order is in
+[production-readiness.md](production-readiness.md#generation-rollout-order-2026-11-17-not-started).

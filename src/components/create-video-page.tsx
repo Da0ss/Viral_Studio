@@ -1,240 +1,91 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { Route } from 'next';
+import { useI18n } from '@/components/locale-provider';
+import { isMessageKey } from '@/lib/i18n/messages';
+import { videoModels, videoPromptLimits, type VideoModelId } from '@/lib/video-models';
 
-interface ModelOption {
-  id: string;
-  name: string;
-  badge: string;
-  cost: string;
-}
+interface EnqueueResponse { jobId?: unknown; error?: unknown }
 
-const MODELS: ModelOption[] = [
-  { id: 'LTX-Video (Lightricks)', name: 'LTX-Video (Lightricks)', badge: 'Fast', cost: '~$0.02' },
-  { id: 'Wan 2.1 (Alibaba)', name: 'Wan 2.1 (Alibaba)', badge: 'SOTA', cost: '~$0.40' },
-  { id: 'HunyuanVideo (Tencent)', name: 'HunyuanVideo (Tencent)', badge: 'Cinematic', cost: '~$0.30' },
-  { id: 'Kling Video (Kuaishou)', name: 'Kling Video (Kuaishou)', badge: 'Pro', cost: '~$0.60' },
-  { id: 'Seedance 2.0 (ByteDance)', name: 'Seedance 2.0 (ByteDance)', badge: 'Studio + Audio', cost: '~$1.20' },
-];
+const pricedModels = videoModels.filter(model => model.priced);
+const fieldStyle = { width: '100%', boxSizing: 'border-box', border: '1px solid var(--line)', background: 'transparent', color: 'var(--ink)', font: 'inherit', padding: 11 } as const;
 
-export default function CreateVideoPage() {
-  const [selectedModel, setSelectedModel] = useState<string>(MODELS[1].id); // По умолчанию Wan 2.1
-  const [prompt, setPrompt] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
+export default function CreateVideoPage({ projects }: { projects: { id: string; name: string }[] }) {
+  const { t, tm } = useI18n();
+  const router = useRouter();
+  const [model, setModel] = useState<VideoModelId | ''>(pricedModels[0]?.id ?? '');
+  const [projectId, setProjectId] = useState<string>(projects[0]?.id ?? '');
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  // One idempotency key per (prompt, model, project); a retry of the same request reuses it.
+  const request = useRef<{ signature: string; id: string } | null>(null);
 
-  async function handleGenerate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!prompt.trim() || loading) return;
+  if (!projects.length) return <main className="page migration-page"><small>{t('generation.eyebrow')}</small><h1>{t('generation.createTitle')}</h1><p role="status">{tm('msg.generation.noProject')}</p></main>;
+  if (!pricedModels.length) return <main className="page migration-page"><small>{t('generation.eyebrow')}</small><h1>{t('generation.createTitle')}</h1><p role="status">{t('generation.noModels')}</p></main>;
+
+  async function handleGenerate(event: React.FormEvent) {
+    event.preventDefault();
+    if (loading) return;
+    const text = prompt.trim();
+    if (!model || !projectId || text.length < videoPromptLimits.min || text.length > videoPromptLimits.max) {
+      setError(tm('msg.generation.checkInput'));
+      return;
+    }
+    const signature = JSON.stringify([text, model, projectId]);
+    if (request.current?.signature !== signature) request.current = { signature, id: crypto.randomUUID() };
 
     setLoading(true);
     setError(null);
-
     try {
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim(), model: selectedModel }),
+        body: JSON.stringify({ prompt: text, model, projectId, requestId: request.current.id }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Ошибка при генерации видео');
+      const data: EnqueueResponse = await res.json().catch(() => ({}));
+      if (res.status === 202 && typeof data.jobId === 'string') {
+        router.push(`/generations/${data.jobId}` as Route);
+        return;
       }
-
-      setVideoUrl(data.videoUrl);
-    } catch (err: any) {
-      setError(err.message || 'Сбой соединения с сервером');
-    } finally {
-      setLoading(false);
+      // The server only returns msg.* keys; anything else falls back to a generic message.
+      setError(tm(typeof data.error === 'string' && isMessageKey(data.error) ? data.error : 'msg.generation.queueFailed'));
+    } catch {
+      setError(tm('msg.generation.queueNetworkFailed'));
     }
+    setLoading(false);
   }
 
-  return (
-    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '32px 20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      {/* Заголовок */}
-      <div style={{ marginBottom: '28px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: '#111827' }}>
-          Генерация видео
-        </h1>
-        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: '15px' }}>
-          Выберите модель нейросети и опишите сцену для синтеза видеоряда.
-        </p>
-      </div>
-
-      <form onSubmit={handleGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {/* Селектор нейросетей */}
-        <div>
-          <label style={{ display: 'block', marginBottom: '10px', fontSize: '14px', fontWeight: 600, color: '#1f2937' }}>
-            Нейросеть генерации:
-          </label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-            {MODELS.map((m) => {
-              const active = selectedModel === m.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setSelectedModel(m.id)}
-                  style={{
-                    backgroundColor: '#111418',
-                    color: '#ffffff',
-                    border: active ? '2px solid #e11d48' : '1px solid #27272a',
-                    borderRadius: '8px',
-                    padding: '8px 14px',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.15s ease',
-                    boxShadow: active ? '0 0 12px rgba(225, 29, 72, 0.35)' : 'none',
-                  }}
-                >
-                  <span>{m.name}</span>
-                  <span
-                    style={{
-                      backgroundColor: '#27272a',
-                      color: active ? '#f43f5e' : '#a1a1aa',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {m.badge}
-                  </span>
-                  <span
-                    style={{
-                      color: '#71717a',
-                      fontSize: '11px',
-                      borderLeft: '1px solid #3f3f46',
-                      paddingLeft: '6px',
-                    }}
-                  >
-                    {m.cost}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+  return <main className="page migration-page">
+    <small>{t('generation.eyebrow')}</small>
+    <h1>{t('generation.createTitle')}</h1>
+    <p className="subtitle">{t('generation.createSubtitle')}</p>
+    <form onSubmit={handleGenerate} aria-busy={loading} style={{ display: 'grid', gap: 20, maxWidth: 760, marginTop: 28 }}>
+      <label className="profile-field">{t('generation.project')}
+        <select style={fieldStyle} value={projectId} onChange={event => setProjectId(event.target.value)} disabled={loading}>
+          {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select>
+      </label>
+      <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 10 }}>
+        <legend style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 10 }}>{t('generation.modelPicker')}</legend>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {pricedModels.map(item => <button key={item.id} type="button" className="ghost-button" aria-pressed={model === item.id} disabled={loading}
+            onClick={() => setModel(item.id)}
+            style={{ minHeight: 44, display: 'flex', gap: 8, alignItems: 'center', ...(model === item.id ? { background: 'var(--lime)', boxShadow: '2px 2px 0 var(--ink)' } : {}) }}>
+            <span>{item.name}</span><small>{item.badge}</small><small style={{ color: 'var(--muted)' }}>{item.cost}</small>
+          </button>)}
         </div>
-
-        {/* Промпт */}
-        <div>
-          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#1f2937' }}>
-            Текстовый промпт:
-          </label>
-          <textarea
-            rows={4}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="A futuristic heavy combat mech stomping through ruins, volumetric smoke, photorealistic 8k..."
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              backgroundColor: '#111418',
-              color: '#ffffff',
-              border: '1px solid #27272a',
-              borderRadius: '8px',
-              padding: '14px',
-              fontSize: '14px',
-              lineHeight: 1.5,
-              outline: 'none',
-              resize: 'vertical',
-            }}
-          />
-        </div>
-
-        {/* Кнопка запуска */}
-        <button
-          type="submit"
-          disabled={loading || !prompt.trim()}
-          style={{
-            backgroundColor: loading ? '#6b7280' : '#e11d48',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            padding: '14px',
-            fontSize: '15px',
-            fontWeight: 700,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'background-color 0.2s',
-            boxShadow: '0 4px 14px rgba(225, 29, 72, 0.3)',
-          }}
-        >
-          {loading ? 'Идет процесс генерации...' : 'Сгенерировать видео'}
-        </button>
-      </form>
-
-      {/* Ошибка */}
-      {error && (
-        <div
-          style={{
-            marginTop: '20px',
-            padding: '14px',
-            backgroundColor: '#450a0a',
-            border: '1px solid #991b1b',
-            borderRadius: '8px',
-            color: '#fca5a5',
-            fontSize: '14px',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* Плеер */}
-      {videoUrl && (
-        <div
-          style={{
-            marginTop: '28px',
-            backgroundColor: '#111418',
-            border: '1px solid #27272a',
-            borderRadius: '12px',
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '12px',
-              fontSize: '13px',
-              color: '#a1a1aa',
-            }}
-          >
-            <span>Результат генерации ({selectedModel}):</span>
-            <a
-              href={videoUrl}
-              target="_blank"
-              rel="noreferrer"
-              download
-              style={{ color: '#e11d48', textDecoration: 'none', fontWeight: 600 }}
-            >
-              Скачать MP4
-            </a>
-          </div>
-          <video
-            src={videoUrl}
-            controls
-            autoPlay
-            loop
-            playsInline
-            style={{
-              width: '100%',
-              borderRadius: '8px',
-              backgroundColor: '#000000',
-              aspectRatio: '16 / 9',
-              display: 'block',
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
+      </fieldset>
+      <label className="profile-field">{t('generation.prompt')}
+        <textarea aria-describedby="create-prompt-count" rows={5} maxLength={videoPromptLimits.max} value={prompt} disabled={loading} style={{ ...fieldStyle, resize: 'vertical' }}
+          onChange={event => setPrompt(event.target.value)} placeholder={t('generation.promptPlaceholder')} />
+      </label>
+      <small id="create-prompt-count" style={{ color: 'var(--muted)', marginTop: -14 }}>{t('generation.promptCount', { count: prompt.trim().length, max: videoPromptLimits.max })}</small>
+      <p>{t('generation.costNotice')}</p>
+      {error && <p className="auth-message error" role="alert">{error}</p>}
+      <button className="cta" type="submit" disabled={loading || !prompt.trim()}><span>{loading ? t('generation.submitting') : t('generation.submit')}</span></button>
+    </form>
+  </main>;
 }

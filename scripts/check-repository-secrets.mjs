@@ -7,7 +7,7 @@ import { detectClientSecrets } from './lib/client-secrets.mjs';
 const root = new URL('../', import.meta.url);
 const cwd = fileURLToPath(root);
 const values = [];
-const sensitiveName = /(?:SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|ACCESS_TOKEN|API_KEY|HF_TOKEN|HUGGING_FACE_HUB_TOKEN)/i;
+const sensitiveName = /(?:SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|ACCESS_TOKEN|API_KEY|HF_TOKEN|HUGGING_FACE_HUB_TOKEN|FAL_KEY)/i;
 function collect(env) {
   for (const [name, value] of Object.entries(env)) {
     if (sensitiveName.test(name) && value) values.push({ name, value });

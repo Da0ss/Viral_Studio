@@ -35,10 +35,28 @@ describe('Auth transport failures', () => {
     expect(JSON.stringify(result)).not.toContain('private provider credential');
     expect(mocks.revalidate).not.toHaveBeenCalled();
   });
-  it('returns the same non-enumerating recovery response for a network failure', async () => {
-    const success = await requestPasswordReset({}, form('/projects'));
-    mocks.reset.mockRejectedValue(new Error('private transport detail'));
-    expect(await requestPasswordReset({}, form('/projects'))).toEqual(success);
+  it('rejects an invalid recovery email without calling the provider', async () => {
+    const data = new FormData();
+    data.set('email', 'not-an-email');
+    expect(await requestPasswordReset({}, data)).toEqual({ error: 'msg.auth.invalidEmail' });
+    expect(mocks.reset).not.toHaveBeenCalled();
+  });
+  it('redirects to the sent confirmation after a successful recovery request', async () => {
+    await expect(requestPasswordReset({}, form('/projects'))).rejects.toThrow('NEXT_REDIRECT:/forgot-password?sent=1');
+    expect(mocks.reset).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    ['a provider error', () => mocks.reset.mockResolvedValue({ error: { message: 'User not found' } })],
+    ['a network failure', () => mocks.reset.mockRejectedValue(new Error('private transport detail'))],
+  ])('redirects identically (non-enumerating) on %s', async (_label, arrange) => {
+    arrange();
+    await expect(requestPasswordReset({}, form('/projects'))).rejects.toThrow('NEXT_REDIRECT:/forgot-password?sent=1');
+    expect(mocks.reset).toHaveBeenCalledTimes(1);
+  });
+  it('returns the not-configured error without redirecting when the client is unavailable', async () => {
+    mocks.client.mockRejectedValue(new Error('missing env'));
+    expect(await requestPasswordReset({}, form('/projects'))).toEqual({ error: 'msg.auth.notConfigured' });
+    expect(mocks.reset).not.toHaveBeenCalled();
   });
   it('keeps successful login redirect outside error handling', async () => {
     await expect(login({}, form('/projects'))).rejects.toThrow('NEXT_REDIRECT:/projects');

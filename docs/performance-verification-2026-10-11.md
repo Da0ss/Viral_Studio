@@ -19,6 +19,7 @@
 
 - `supabase/tests/performance_fk_rls_acceptance.sql` проверяет ведущую колонку каждого индекса, форму обеих policies и матрицу owner/admin/editor/viewer/outsider в транзакции с `ROLLBACK`.
 - `docs/sql/hosted-performance-acceptance.sql` проверяет каталог без чтения пользовательских строк и показывает планы трёх выбранных lookup-путей.
+- Обновление 2026-11-17: оба скрипта `docs/sql/hosted-performance-*-acceptance.sql` теперь ожидают состояние после миграции `20261117120000` (11 FK-индексов, по одной policy на команду); `docs/sql/hosted-performance-fk-indexes-rls.sql` устарел и намеренно падает при запуске (не запускать).
 - До применения advisor показывал 11 unindexed FK, 2 `auth_rls_initplan`, 7 unused indexes и 2 multiple permissive policy warnings.
 - Каноническая попытка `supabase migration --help` через локально закреплённый CLI 2.119.0 остановилась на `EPERM` при записи telemetry за пределами workspace. Повторная установка и повторные попытки не выполнялись; файл миграции создан вручную как документированный fallback.
 

@@ -2,13 +2,8 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
-import {
-  cancelVideo,
-  downloadVideo,
-  pollVideo,
-  submitVideo,
-  VideoProviderError,
-} from '@/lib/huggingface-video';
+import { VIDEO_MODEL, VIDEO_PROVIDER, VideoProviderError } from '@/lib/huggingface-video';
+import { adapterFor } from '@/lib/video-providers';
 
 const maxBatchSize = 8;
 const backoffSeconds = (attempt: number) => Math.min(300, 5 * 2 ** Math.min(6, Math.max(0, attempt - 1)));
@@ -23,6 +18,8 @@ type ClaimedJob = {
   provider_request_path: string | null;
   cancel_requested: boolean;
   output_storage_path: string | null;
+  provider?: string | null;
+  model?: string | null;
 };
 
 const codeOf = (error: unknown) => error instanceof VideoProviderError ? error.code : 'temporary';
@@ -40,9 +37,21 @@ async function isCompleted(admin: ReturnType<typeof createAdminClient>, id: stri
 
 async function advance(admin: ReturnType<typeof createAdminClient>, job: ClaimedJob, deadlineAt?: number): Promise<boolean> {
   const { job_id: id, lease_token: leaseToken } = job;
+  // Before the multimodel migration the claim RPCs omit provider/model; hosted CHECKs pin every
+  // row to the legacy pair. Only an absent field falls back; explicit null/other stays unsupported.
+  const adapter = adapterFor(
+    job.provider === undefined ? VIDEO_PROVIDER : job.provider,
+    job.model === undefined ? VIDEO_MODEL : job.model,
+  );
   if (job.dispatch_state === 'submitting') {
     if (job.cancel_requested) {
       return acknowledged(admin, 'finish_generation_pre_submit_cancel', { target_job: id, token: leaseToken });
+    }
+    if (!adapter) {
+      return acknowledged(admin, 'finish_generation_without_charge', { target_job: id, token: leaseToken, error_code: 'model_unsupported' });
+    }
+    if (!adapter.submitAvailable()) {
+      return acknowledged(admin, 'finish_generation_without_charge', { target_job: id, token: leaseToken, error_code: 'multimodel_disabled' });
     }
     const { data: authorized, error: authorizationError } = await admin.rpc('authorize_generation_dispatch', {
       target_job: id, token: leaseToken,
@@ -50,12 +59,15 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
     if (authorizationError || authorized !== true) {
       return !authorizationError && authorized === false ? isCompleted(admin, id).then(async completed => {
         if (completed) return true;
-        const { data: state } = await admin.from('generation_jobs').select('status').eq('id', id).maybeSingle();
-        return state?.status === 'cancelled';
+        const { data: state } = await admin.from('generation_jobs').select('status,dispatch_state,last_error_code').eq('id', id).maybeSingle();
+        // The dispatch gate also finalizes (no charge) queued jobs whose catalog model was disabled.
+        return state?.status === 'cancelled' || (state?.status === 'failed' && state?.dispatch_state === 'finalized');
       }) : false;
     }
     try {
-      const requestPath = await submitVideo(job.prompt, deadlineAt);
+      const { requestPath, requestId } = await adapter.submit(job.prompt, deadlineAt, id);
+      // Never log prompt text or provider bodies.
+      console.info(JSON.stringify({ event: 'generation.submitted', jobId: id, model: job.model, requestId: requestId ?? null }));
       const { data, error } = await admin.rpc('record_generation_submission', {
         target_job: id, token: leaseToken, request_path: requestPath,
       });
@@ -79,9 +91,13 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
   if (!requestPath) {
     return acknowledged(admin, 'mark_generation_uncertain', { target_job: id, token: leaseToken, error_code: 'provider_path_missing' });
   }
+  if (!adapter) {
+    // Already submitted to an unknown provider: keep the reservation, never guess.
+    return acknowledged(admin, 'mark_generation_uncertain', { target_job: id, token: leaseToken, error_code: 'model_unsupported' });
+  }
   if (job.dispatch_state === 'cancelling' || job.cancel_requested) {
     try {
-      await cancelVideo(requestPath, deadlineAt);
+      await adapter.cancel(requestPath, deadlineAt);
       return acknowledged(admin, 'finish_generation_cancel', { target_job: id, token: leaseToken });
     } catch {
       return acknowledged(admin, 'retry_generation_poll', {
@@ -92,7 +108,7 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
 
   let result;
   try {
-    result = await pollVideo(requestPath, deadlineAt);
+    result = await adapter.poll(requestPath, deadlineAt);
   } catch (error) {
     const code = codeOf(error);
     if (code === 'temporary' || code === 'unconfigured') {
@@ -116,7 +132,7 @@ async function advance(admin: ReturnType<typeof createAdminClient>, job: Claimed
 
   let bytes: Uint8Array;
   try {
-    bytes = await downloadVideo(result.url, deadlineAt);
+    bytes = await adapter.download(result.url, deadlineAt);
   } catch (error) {
     const code = codeOf(error);
     if (code === 'temporary') {

@@ -1,11 +1,29 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { getMedia, parseMediaPage } from '@/lib/media';
+import { isMediaStoragePath, mediaStoragePath } from '@/lib/media-path';
 const mocks = vi.hoisted(() => ({ client: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.client }));
 beforeEach(() => vi.resetAllMocks());
 it('normalizes pagination without accepting malformed offsets', () => {
   expect(['0', '-1', '2junk', undefined].map(parseMediaPage)).toEqual([1, 1, 1, 1]);
   expect(parseMediaPage('999999')).toBe(10000);
+});
+const projectId = '11111111-2222-3333-4444-555555555555';
+const assetId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+it('accepts canonical private media storage paths and exposes the project id', () => {
+  const path = `projects/${projectId}/${assetId}/clip_1-final.mp4`;
+  expect(isMediaStoragePath(path)).toBe(true);
+  expect(mediaStoragePath.exec(path)?.[1]).toBe(projectId);
+  expect(isMediaStoragePath(`projects/${projectId}/${assetId}/${'a'.repeat(101)}.png`)).toBe(true);
+});
+it('rejects malformed or traversal-style storage paths', () => {
+  for (const bad of [
+    '', `/projects/${projectId}/${assetId}/a.mp4`, `projects/${projectId}/${assetId}/a.mp4/`,
+    `projects/${projectId}/${assetId}/../a.mp4`, `projects/${projectId}/not-a-uuid/a.mp4`,
+    `projects/short/${assetId}/a.mp4`, `projects/${projectId}/${assetId}/a`, `projects/${projectId}/${assetId}/.mp4`,
+    `projects/${projectId}/${assetId}/a.MP4`, `projects/${projectId}/${assetId}/a.mp4\n`,
+    `projects/${projectId}/${assetId}/${'a'.repeat(102)}.png`, `projects/${projectId}/${assetId}/a.verylongext`,
+  ]) expect(isMediaStoragePath(bad)).toBe(false);
 });
 function setup(user = true, error: unknown = null) {
   const query = { select: vi.fn(), order: vi.fn(), range: vi.fn().mockResolvedValue({ data: [{ id: 'asset', project_id: 'project', name: 'Real file' }], count: 25, error }) };

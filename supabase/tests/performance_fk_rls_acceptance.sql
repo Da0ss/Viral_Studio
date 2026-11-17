@@ -1,8 +1,6 @@
 do $$
 declare
   missing_indexes text[];
-  organization_policy record;
-  project_policy record;
 begin
   select array_agg(expected.name order by expected.name)
   into missing_indexes
@@ -33,31 +31,44 @@ begin
     raise exception 'Missing or invalid performance indexes: %', missing_indexes;
   end if;
 
-  select * into organization_policy from pg_policies
-  where schemaname = 'public' and tablename = 'organization_members'
-    and policyname = 'organization_members: owners manage members';
-  if not found then raise exception 'Organization owner policy is absent'; end if;
-  select * into project_policy from pg_policies
-  where schemaname = 'public' and tablename = 'project_members'
-    and policyname = 'project_members: project owners manage';
-  if not found then raise exception 'Project owner policy is absent'; end if;
-  if (select count(*) from pg_policies where schemaname='public' and tablename='organization_members'
-      and policyname='organization_members: owners manage members') is distinct from 1::bigint
-    or (select count(*) from pg_policies where schemaname='public' and tablename='project_members'
-      and policyname='project_members: project owners manage') is distinct from 1::bigint
-  then raise exception 'Owner policy count changed unexpectedly'; end if;
-  if organization_policy.permissive is distinct from 'PERMISSIVE'
-    or organization_policy.cmd is distinct from 'ALL'
-    or organization_policy.roles is distinct from array['authenticated']::name[]
-    or (organization_policy.qual like '%is_organization_owner%SELECT auth.uid()%') is distinct from true
-    or (organization_policy.with_check like '%is_organization_owner%SELECT auth.uid()%') is distinct from true
-  then raise exception 'Organization owner policy shape changed unexpectedly'; end if;
-  if project_policy.permissive is distinct from 'PERMISSIVE'
-    or project_policy.cmd is distinct from 'ALL'
-    or project_policy.roles is distinct from array['authenticated']::name[]
-    or (project_policy.qual like '%is_project_owner%SELECT auth.uid()%') is distinct from true
-    or (project_policy.with_check like '%is_project_owner%SELECT auth.uid()%') is distinct from true
-  then raise exception 'Project owner policy shape changed unexpectedly'; end if;
+end $$;
+do $$ declare t record; p record; begin
+  for t in select * from (values
+    ('organization_members'::text,'is_organization_owner'::text),
+    ('project_members','is_project_owner')
+  ) v(table_name,helper) loop
+    if exists (select 1 from pg_catalog.pg_policies where schemaname='public'
+      and tablename=t.table_name and cmd='ALL')
+    then raise exception 'Unexpected FOR ALL policy on %',t.table_name; end if;
+    if (select array_agg(cmd order by cmd) from pg_catalog.pg_policies
+        where schemaname='public' and tablename=t.table_name)
+      is distinct from array['DELETE','INSERT','SELECT','UPDATE']::text[]
+    then raise exception 'Policy commands on % are not exactly one each of DELETE/INSERT/SELECT/UPDATE',t.table_name; end if;
+    if exists (select 1 from pg_catalog.pg_policies where schemaname='public'
+      and tablename=t.table_name
+      and (permissive is distinct from 'PERMISSIVE' or roles is distinct from array['authenticated']::name[]))
+    then raise exception 'Policies on % must be permissive and authenticated-only',t.table_name; end if;
+
+    select * into p from pg_catalog.pg_policies where schemaname='public'
+      and tablename=t.table_name and cmd='UPDATE';
+    if coalesce(p.qual like '%'||t.helper||'%SELECT auth.uid()%',false) is not true
+      or coalesce(p.with_check like '%'||t.helper||'%SELECT auth.uid()%',false) is not true
+    then raise exception 'Owner UPDATE policy on % changed unexpectedly',t.table_name; end if;
+    select * into p from pg_catalog.pg_policies where schemaname='public'
+      and tablename=t.table_name and cmd='INSERT';
+    if p.qual is not null
+      or coalesce(p.with_check like '%'||t.helper||'%SELECT auth.uid()%',false) is not true
+    then raise exception 'Owner INSERT policy on % changed unexpectedly',t.table_name; end if;
+    select * into p from pg_catalog.pg_policies where schemaname='public'
+      and tablename=t.table_name and cmd='DELETE';
+    if p.with_check is not null
+      or coalesce(p.qual like '%'||t.helper||'%SELECT auth.uid()%',false) is not true
+    then raise exception 'Owner DELETE policy on % changed unexpectedly',t.table_name; end if;
+    select * into p from pg_catalog.pg_policies where schemaname='public'
+      and tablename=t.table_name and cmd='SELECT';
+    if coalesce(p.qual like '%'||t.helper||'%',false) is not true
+    then raise exception 'Consolidated SELECT policy on % lost the owner branch',t.table_name; end if;
+  end loop;
 end $$;
 
 begin;
@@ -79,8 +90,8 @@ do $$ declare affected integer; begin
 end $$;
 reset role;
 
--- Admin/editor are still readable through the independent permissive SELECT
--- policies, but the owner-management policies do not grant write access.
+-- Admin/editor are still readable through the consolidated SELECT
+-- policy, but the owner-management policies do not grant write access.
 update public.organization_members set role = 'admin'
   where organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
     and user_id = '22222222-2222-4222-8222-222222222222';
