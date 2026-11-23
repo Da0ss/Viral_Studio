@@ -29,7 +29,7 @@ The application is not yet production-ready; authenticated browser, database
 isolation and generation-worker acceptance are still required.
 
 Test users: `pnpm seed:users` (scripts/seed-users.ts) creates 73 confirmed
-accounts on `@example.test` through the Auth Admin API, marked with
+accounts with invented `@gmail.com` / `@mail.ru` addresses (no mail is sent; email notifications off) through the Auth Admin API, marked with
 `user_metadata.is_test_user`. Profile rows in `public.profiles` come from the
 `on_auth_user_created_profile` trigger; the script adds a generated avatar in the
 `avatars` bucket and verifies the result. Existing accounts are skipped and never

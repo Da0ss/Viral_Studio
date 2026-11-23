@@ -10,32 +10,46 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 // inserts a profile itself if that trigger did not. Existing accounts are never
 // modified or deleted. New credentials are appended to .seed/test-users.csv (git-ignored).
 //
+// The gmail.com / mail.ru addresses are invented for testing; nobody here owns those
+// mailboxes. email_confirm marks them confirmed without sending any mail, and email
+// notifications are switched off in their profiles. Never send mail to these addresses.
+//
 //   pnpm seed:users            create missing test users, then verify
 //   pnpm seed:users --dry-run  validate the list locally, no Supabase calls
 
-const EMAIL_DOMAIN = 'example.test';
+const DOMAINS = ['gmail.com', 'mail.ru'] as const;
+type Domain = (typeof DOMAINS)[number];
 const OUT_DIR = resolve(process.cwd(), '.seed');
 const CSV_PATH = resolve(OUT_DIR, 'test-users.csv');
 const AVATAR_BUCKET = 'avatars';
 const EXPECTED_COUNT = 73;
 
-const NAMES = [
-  'Alex Miller', 'Sophia Williams', 'Max Johnson', 'Oliver Brown', 'Emma Davis',
-  'Liam Wilson', 'Ava Taylor', 'Noah Anderson', 'Mia Thomas', 'Ethan Moore',
-  'Isabella Martin', 'Lucas Jackson', 'Amelia White', 'Mason Harris', 'Harper Clark',
-  'Logan Lewis', 'Evelyn Walker', 'James Hall', 'Charlotte Young', 'Benjamin King',
-  'Abigail Wright', 'Henry Scott', 'Emily Green', 'Daniel Baker', 'Ella Adams',
-  'Jack Nelson', 'Grace Carter', 'Samuel Mitchell', 'Chloe Roberts', 'Leo Turner',
-  'Aruzhan Seitkali', 'Dias Nurlanov', 'Aigerim Bekova', 'Timur Akhmetov', 'Madina Omarova',
-  'Arman Zhaksylyk', 'Dana Serikova', 'Yerlan Abenov', 'Kamila Ismailova', 'Sanzhar Kenzhebayev',
-  'Alina Petrova', 'Ivan Sokolov', 'Maria Ivanova', 'Artem Kuznetsov', 'Sofia Lebedeva',
-  'Nikita Volkov',
-  'Crazy Potato', 'Sleepy Cat', 'Banana King', 'Coffee Addict', 'Pixel Panda',
-  'Captain Waffle', 'Turbo Snail', 'Lazy Llama', 'Ninja Pickle', 'Disco Penguin',
-  'Grumpy Toast', 'Cosmic Noodle', 'Spicy Mango', 'Fluffy Dragon', 'Sneaky Raccoon',
-  'Mr Pancake', 'Silent Duck', 'Rocket Hamster', 'Moody Cactus', 'Funky Monkey',
-  'Salty Pretzel', 'Dizzy Owl', 'Happy Burrito', 'Wobbly Walrus', 'Chill Broccoli',
-  'Lucky Dumpling', 'Shy Avocado',
+const SEED: Array<[name: string, domain: Domain]> = [
+  ['Alex Miller', 'gmail.com'], ['Sophia Williams', 'gmail.com'], ['Max Johnson', 'gmail.com'],
+  ['Oliver Brown', 'gmail.com'], ['Emma Davis', 'gmail.com'], ['Liam Wilson', 'gmail.com'],
+  ['Ava Taylor', 'gmail.com'], ['Noah Anderson', 'gmail.com'], ['Mia Thomas', 'gmail.com'],
+  ['Ethan Moore', 'gmail.com'], ['Isabella Martin', 'gmail.com'], ['Lucas Jackson', 'gmail.com'],
+  ['Amelia White', 'gmail.com'], ['Mason Harris', 'gmail.com'], ['Harper Clark', 'gmail.com'],
+  ['Logan Lewis', 'gmail.com'], ['Evelyn Walker', 'gmail.com'], ['James Hall', 'gmail.com'],
+  ['Charlotte Young', 'gmail.com'], ['Benjamin King', 'gmail.com'], ['Abigail Wright', 'gmail.com'],
+  ['Henry Scott', 'gmail.com'], ['Emily Green', 'gmail.com'], ['Daniel Baker', 'gmail.com'],
+  ['Ella Adams', 'gmail.com'], ['Jack Nelson', 'gmail.com'], ['Grace Carter', 'gmail.com'],
+  ['Samuel Mitchell', 'gmail.com'], ['Chloe Roberts', 'gmail.com'], ['Leo Turner', 'gmail.com'],
+  ['Aruzhan Seitkali', 'mail.ru'], ['Dias Nurlanov', 'mail.ru'], ['Aigerim Bekova', 'mail.ru'],
+  ['Timur Akhmetov', 'mail.ru'], ['Madina Omarova', 'mail.ru'], ['Arman Zhaksylyk', 'mail.ru'],
+  ['Dana Serikova', 'mail.ru'], ['Yerlan Abenov', 'mail.ru'], ['Kamila Ismailova', 'mail.ru'],
+  ['Sanzhar Kenzhebayev', 'mail.ru'], ['Alina Petrova', 'mail.ru'], ['Ivan Sokolov', 'mail.ru'],
+  ['Maria Ivanova', 'mail.ru'], ['Artem Kuznetsov', 'mail.ru'], ['Sofia Lebedeva', 'mail.ru'],
+  ['Nikita Volkov', 'mail.ru'], ['Crazy Potato', 'mail.ru'], ['Sleepy Cat', 'gmail.com'],
+  ['Banana King', 'gmail.com'], ['Coffee Addict', 'gmail.com'], ['Pixel Panda', 'gmail.com'],
+  ['Captain Waffle', 'gmail.com'], ['Turbo Snail', 'gmail.com'], ['Lazy Llama', 'gmail.com'],
+  ['Ninja Pickle', 'gmail.com'], ['Disco Penguin', 'gmail.com'], ['Grumpy Toast', 'mail.ru'],
+  ['Cosmic Noodle', 'gmail.com'], ['Spicy Mango', 'gmail.com'], ['Fluffy Dragon', 'gmail.com'],
+  ['Sneaky Raccoon', 'gmail.com'], ['Mr Pancake', 'gmail.com'], ['Silent Duck', 'mail.ru'],
+  ['Rocket Hamster', 'gmail.com'], ['Moody Cactus', 'mail.ru'], ['Funky Monkey', 'gmail.com'],
+  ['Salty Pretzel', 'mail.ru'], ['Dizzy Owl', 'gmail.com'], ['Happy Burrito', 'gmail.com'],
+  ['Wobbly Walrus', 'gmail.com'], ['Chill Broccoli', 'gmail.com'], ['Lucky Dumpling', 'mail.ru'],
+  ['Shy Avocado', 'gmail.com'],
 ];
 
 type SeedUser = { name: string; username: string; email: string };
@@ -55,12 +69,13 @@ async function loadEnvLocal(): Promise<void> {
 }
 
 function buildUsers(): SeedUser[] {
-  const users = NAMES.map((name) => {
+  const users = SEED.map(([name, domain]) => {
     const username = name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
-    return { name, username, email: `${username}@${EMAIL_DOMAIN}` };
+    return { name, username, email: `${username}@${domain}` };
   });
   if (users.length !== EXPECTED_COUNT) throw new Error(`Expected ${EXPECTED_COUNT} users, got ${users.length}`);
   if (new Set(users.map((u) => u.username)).size !== users.length) throw new Error('Duplicate username in seed list');
+  if (new Set(users.map((u) => u.email)).size !== users.length) throw new Error('Duplicate email in seed list');
   for (const u of users) {
     if (u.name.trim().length < 2 || u.name.length > 80) throw new Error(`Name violates profiles_name length: ${u.name}`);
   }
@@ -200,6 +215,8 @@ async function createOne(supabase: SupabaseClient, entry: SeedUser, existing: Ma
     console.error(`FAIL ${entry.email}: account created, ${(profileError as Error).message}`);
     return 'failed';
   }
+  const quiet = await supabase.from('profiles').update({ notification_email: false, notification_marketing: false }).eq('id', data.user.id);
+  if (quiet.error) warnings.push(`${entry.email}: could not disable email notifications: ${quiet.error.message}`);
   const avatarWarning = await attachAvatar(supabase, data.user, entry.username);
   if (avatarWarning) warnings.push(`${entry.email}: ${avatarWarning}`);
   console.log(`ok   ${entry.email}`);
@@ -250,7 +267,8 @@ async function main(): Promise<void> {
     const dir = resolve(OUT_DIR, 'avatars-preview');
     await mkdir(dir, { recursive: true });
     for (const u of seed) await writeFile(resolve(dir, `${u.username}.png`), generateAvatar(u.username));
-    console.log(`Dry run: ${seed.length} unique users, avatar previews in ${dir}`);
+    const share = DOMAINS.map((d) => `${d}: ${seed.filter((u) => u.email.endsWith(`@${d}`)).length}`).join(', ');
+    console.log(`Dry run: ${seed.length} unique users, ${new Set(seed.map((u) => u.email)).size} unique emails (${share}), avatar previews in ${dir}`);
     for (const u of seed) console.log(`${u.email.padEnd(40)} ${u.name}`);
     return;
   }
