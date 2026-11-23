@@ -28,5 +28,12 @@ Remaining release blockers: [implementation progress](docs/implementation-progre
 The application is not yet production-ready; authenticated browser, database
 isolation and generation-worker acceptance are still required.
 
+Test users: `pnpm seed:users` creates 73 confirmed accounts on `@example.test`
+(name and username in user metadata, profile row via the auth trigger, generated
+avatar in the `avatars` bucket). It reads `NEXT_PUBLIC_SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` from `.env.local`; logins and passwords are written
+to the git-ignored `.seed/test-users.csv`. Re-running skips existing users;
+`pnpm seed:users --delete` removes them, `--dry-run` only checks the list.
+
 The old static prototype remains available through `pnpm legacy:dev` and
 `pnpm legacy:build`; it is not the production application.

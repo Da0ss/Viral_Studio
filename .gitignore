@@ -9,6 +9,7 @@ tsconfig.tsbuildinfo
 test-results/
 playwright-report/
 supabase/.temp/
+.seed/
 
 # Environment secrets
 .env

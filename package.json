@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:db": "node scripts/test-database.mjs",
+    "seed:users": "node scripts/seed-users.mjs",
     "supabase": "node node_modules/supabase/dist/supabase.js",
     "db:local:start": "node node_modules/supabase/dist/supabase.js start",
     "db:local:reset": "node node_modules/supabase/dist/supabase.js db reset --local --no-seed",
